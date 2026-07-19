@@ -17,7 +17,7 @@ class PostTestScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final progress = ref.watch(progressProvider);
-    final hasPretestScore = progress.overallPretestScore > 0;
+    final hasPretestScore = progress.hasCompletedPretest;
     final nGain = progress.nGain;
     final materials = ref.watch(materialProvider).materials;
     final unitTitleById = {for (final m in materials) m.id: m.title};
@@ -116,12 +116,12 @@ class PostTestScreen extends ConsumerWidget {
     final topics = List.generate(progress.unitProgress.length, (index) {
       final unit = progress.unitProgress[index];
       final name = unitTitleById[unit.unitId] ?? unit.unitId;
-      final preScore = unit.pretestScore ?? 0;
-      final postScore = unit.finalScore ?? unit.checkpointAverage ?? 0;
+      // Materi belum tuntas → tampilkan progres baca; sudah tuntas & sudah
+      // mengerjakan Latihan → tampilkan nilai Latihan sebagai penguasaan topik.
+      final masteryScore = unit.practiceScore ?? (unit.materialProgress * 100).round();
       return (
         name,
-        preScore,
-        postScore,
+        masteryScore,
         topicColors[index % topicColors.length],
       );
     });
@@ -167,9 +167,9 @@ class PostTestScreen extends ConsumerWidget {
                         const SizedBox(height: 12),
                         Row(
                           children: [
-                            Expanded(child: _scoreCol('Pre-Test', '${progress.overallPretestScore}', AppColors.accentOrange)),
+                            Expanded(child: _scoreCol('Pre-Test', '${progress.overallPretestScore ?? 0}', AppColors.accentOrange)),
                             const Icon(Icons.arrow_forward_rounded, color: AppColors.secondaryGreen, size: 24),
-                            Expanded(child: _scoreCol('Post-Test', '${progress.overallPosttestScore}', AppColors.secondaryGreen)),
+                            Expanded(child: _scoreCol('Post-Test', '${progress.overallPosttestScore ?? 0}', AppColors.secondaryGreen)),
                           ],
                         ),
                       ],
@@ -202,7 +202,7 @@ class PostTestScreen extends ConsumerWidget {
 
                   const SizedBox(height: 24),
 
-                  // ── Radar Chart: Per-Topic Comparison ──
+                  // ── Radar Chart: Penguasaan Per Topik ──
                   Text('RADAR KOMPETENSI', style: AppTextStyles.eyebrow.copyWith(color: AppColors.postDark)),
                   const SizedBox(height: 8),
                   if (hasTopics)
@@ -230,18 +230,11 @@ class PostTestScreen extends ConsumerWidget {
                           },
                           dataSets: [
                             RadarDataSet(
-                              fillColor: AppColors.accentOrange.withValues(alpha: 0.15),
-                              borderColor: AppColors.accentOrange,
-                              borderWidth: 2,
-                              entryRadius: 3,
-                              dataEntries: topics.map((t) => RadarEntry(value: t.$2.toDouble())).toList(),
-                            ),
-                            RadarDataSet(
                               fillColor: AppColors.progressTealAccent.withValues(alpha: 0.2),
                               borderColor: AppColors.progressTealAccent,
                               borderWidth: 2,
                               entryRadius: 3,
-                              dataEntries: topics.map((t) => RadarEntry(value: t.$3.toDouble())).toList(),
+                              dataEntries: topics.map((t) => RadarEntry(value: t.$2.toDouble())).toList(),
                             ),
                           ],
                         ),
@@ -249,15 +242,6 @@ class PostTestScreen extends ConsumerWidget {
                     ).animate().fadeIn(delay: 300.ms, duration: 500.ms)
                   else
                     _emptyDataCard(),
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      _legendDot(AppColors.accentOrange, 'Pre-Test'),
-                      const SizedBox(width: 16),
-                      _legendDot(AppColors.progressTealAccent, 'Post-Test'),
-                    ],
-                  ),
 
                   const SizedBox(height: 24),
 
@@ -328,10 +312,10 @@ class PostTestScreen extends ConsumerWidget {
                               x: i,
                               barRods: [
                                 BarChartRodData(
-                                  toY: topics[i].$3.toDouble(),
+                                  toY: topics[i].$2.toDouble(),
                                   gradient: LinearGradient(
                                     begin: Alignment.bottomCenter, end: Alignment.topCenter,
-                                    colors: [topics[i].$4.withValues(alpha: 0.6), topics[i].$4],
+                                    colors: [topics[i].$3.withValues(alpha: 0.6), topics[i].$3],
                                   ),
                                   width: 18, borderRadius: BorderRadius.circular(6),
                                 ),
@@ -388,17 +372,6 @@ class PostTestScreen extends ConsumerWidget {
         style: AppTextStyles.bodySmall.copyWith(color: AppColors.textMuted),
         textAlign: TextAlign.center,
       ),
-    );
-  }
-
-  Widget _legendDot(Color color, String label) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(width: 10, height: 10, decoration: BoxDecoration(shape: BoxShape.circle, color: color)),
-        const SizedBox(width: 6),
-        Text(label, style: AppTextStyles.labelSmall.copyWith(color: AppColors.textMuted)),
-      ],
     );
   }
 }

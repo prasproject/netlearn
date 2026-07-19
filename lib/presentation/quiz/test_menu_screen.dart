@@ -13,7 +13,7 @@ class TestMenuScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final progress = ref.watch(progressProvider);
-    final hasPretestScore = progress.overallPretestScore > 0;
+    final hasPretestScore = progress.hasCompletedPretest;
 
     return Scaffold(
       backgroundColor: AppColors.background,

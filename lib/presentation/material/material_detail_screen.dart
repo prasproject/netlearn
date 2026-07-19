@@ -12,6 +12,9 @@ import '../../data/models/progress_model.dart';
 import '../../domain/providers/material_provider.dart';
 import '../../domain/providers/audio_provider.dart';
 import '../../domain/providers/progress_provider.dart';
+import '../../domain/providers/auth_provider.dart';
+import '../../domain/services/ngain_calculator.dart';
+import '../../domain/services/learning_progress_helper.dart';
 
 /// Material Detail Screen — Slide-based learning content view.
 class MaterialDetailScreen extends ConsumerWidget {
@@ -23,23 +26,14 @@ class MaterialDetailScreen extends ConsumerWidget {
     required List<MaterialModel> units,
     required List<ProgressModel> progress,
   }) {
-    final ordered = List<MaterialModel>.from(units)
-      ..sort((a, b) {
-        final o = a.order.compareTo(b.order);
-        if (o != 0) return o;
-        return a.unitNumber.compareTo(b.unitNumber);
-      });
+    final ordered = LearningProgressHelper.sortedUnits(units);
     final idx = ordered.indexWhere((u) => u.id == unitId);
     if (idx <= 0) return false;
-    final prev = ordered[idx - 1];
-    final prevP = progress.where((p) => p.unitId == prev.id).cast<ProgressModel?>().firstWhere(
-          (p) => p != null,
-          orElse: () => null,
-        ) ??
-        ProgressModel(unitId: prev.id, totalMaterials: prev.totalSlides);
-    // Unit tidak boleh terkunci karena checkpoint.
-    // Cukup selesaikan materi unit sebelumnya untuk membuka unit berikutnya.
-    return !prevP.isCompleted;
+    return !LearningProgressHelper.isUnitUnlocked(
+      unitIndex: idx,
+      orderedUnits: ordered,
+      progress: progress,
+    );
   }
 
   @override
@@ -250,17 +244,72 @@ class MaterialDetailScreen extends ConsumerWidget {
                     text: slideIndex < unit.totalSlides - 1 ? 'Lanjut' : 'Selesai',
                     backgroundColor: AppColors.accentOrange,
                     shadowColor: AppColors.accentOrangeDark,
-                    onPressed: () {
+                    onPressed: () async {
                       ref.read(audioProvider.notifier).playSfx(SoundEffect.slideNext);
                       ref.read(audioProvider.notifier).stopNarration();
                       if (slideIndex < unit.totalSlides - 1) {
-                        ref.read(progressProvider.notifier).completeMaterial(unitId);
+                        final slidesBefore = ref
+                                .read(progressProvider.notifier)
+                                .unitProgressFor(unitId)
+                                ?.materialsCompleted ??
+                            0;
+                        await ref.read(progressProvider.notifier).completeMaterial(
+                              unitId,
+                              totalSlides: unit.totalSlides,
+                            );
+                        final slidesAfter = ref
+                                .read(progressProvider.notifier)
+                                .unitProgressFor(unitId)
+                                ?.materialsCompleted ??
+                            0;
+                        if (slidesAfter > slidesBefore) {
+                          ref.read(authProvider.notifier).addXP(XPService.materialCompleteXP);
+                        }
                         ref.read(materialProvider.notifier).nextSlide();
                       } else {
-                        ref.read(progressProvider.notifier).completeMaterial(unitId);
-                        // Selesai materi: kembali ke daftar materi (checkpoint opsional).
+                        final progressNotifier = ref.read(progressProvider.notifier);
+                        final unitProgress = progressNotifier.unitProgressFor(unitId);
+                        final slidesRead = unitProgress?.materialsCompleted ?? 0;
+                        final unitDone = slidesRead >= unit.totalSlides ||
+                            (unitProgress?.isCompleted ?? false);
+                        final needsPractice =
+                            unitDone && !(unitProgress?.hasPracticeCompleted ?? false);
+
+                        var justCompleted = false;
+                        if (slidesRead < unit.totalSlides) {
+                          final slidesBefore = slidesRead;
+                          justCompleted = await progressNotifier.completeMaterial(
+                            unitId,
+                            totalSlides: unit.totalSlides,
+                          );
+                          final slidesAfter = progressNotifier
+                                  .unitProgressFor(unitId)
+                                  ?.materialsCompleted ??
+                              slidesBefore;
+                          if (slidesAfter > slidesBefore) {
+                            ref.read(authProvider.notifier).addXP(XPService.materialCompleteXP);
+                          }
+                        } else if (unitProgress != null &&
+                            unitProgress.totalMaterials != unit.totalSlides) {
+                          await progressNotifier.syncUnitMaterialTotals(
+                            unitId,
+                            unit.totalSlides,
+                          );
+                        }
+
                         ref.read(audioProvider.notifier).playSfx(SoundEffect.slideNext);
-                        context.pop();
+
+                        if ((justCompleted || needsPractice) && context.mounted) {
+                          context.push(
+                            '/practice/$unitId',
+                            extra: {
+                              'unitTitle': unit.title,
+                              'popMaterialDetail': true,
+                            },
+                          );
+                        } else if (context.mounted) {
+                          context.pop();
+                        }
                       }
                     },
                     padding: const EdgeInsets.symmetric(vertical: 12),

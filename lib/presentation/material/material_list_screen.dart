@@ -8,6 +8,7 @@ import '../../core/widgets/header_back_button.dart';
 import '../../data/models/material_model.dart';
 import '../../domain/providers/material_provider.dart';
 import '../../domain/providers/progress_provider.dart';
+import '../../domain/services/learning_progress_helper.dart';
 import '../../data/models/progress_model.dart';
 
 /// Material List Screen — Shows all units with lock/progress status.
@@ -19,30 +20,19 @@ class MaterialListScreen extends ConsumerWidget {
     required List<MaterialModel> orderedUnits,
     required List<ProgressModel> progress,
   }) {
-    if (unitIndex <= 0) return false; // Unit 1 selalu terbuka
-    final prevUnit = orderedUnits[unitIndex - 1];
-    final prevProgress =
-        progress.where((p) => p.unitId == prevUnit.id).cast<ProgressModel?>().firstWhere(
-              (p) => p != null,
-              orElse: () => null,
-            ) ??
-            ProgressModel(unitId: prevUnit.id, totalMaterials: prevUnit.totalSlides);
-    // Unlock unit berikutnya cukup dengan menyelesaikan materi unit sebelumnya.
-    // Checkpoint (jika ada) bersifat opsional dan tidak boleh mengunci progres materi.
-    return !prevProgress.isCompleted;
+    return !LearningProgressHelper.isUnitUnlocked(
+      unitIndex: unitIndex,
+      orderedUnits: orderedUnits,
+      progress: progress,
+    );
   }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final matState = ref.watch(materialProvider);
     final progress = ref.watch(progressProvider);
-    final units = List<MaterialModel>.from(matState.materials)
-      ..sort((a, b) {
-        final o = a.order.compareTo(b.order);
-        if (o != 0) return o;
-        return a.unitNumber.compareTo(b.unitNumber);
-      });
-    final hasPretestScore = progress.overallPretestScore > 0;
+    final units = LearningProgressHelper.sortedUnits(matState.materials);
+    final hasPretestScore = progress.hasCompletedPretest;
     const videoColor = Color(0xFFC62828);
 
     return Scaffold(
@@ -153,23 +143,28 @@ class MaterialListScreen extends ConsumerWidget {
                 }
 
                 final unit = units[index];
-                final unitProgress = progress.unitProgress.cast<ProgressModel?>().firstWhere(
-                      (p) => p?.unitId == unit.id,
-                      orElse: () => null,
-                    ) ??
+                final unitProgress = LearningProgressHelper.progressFor(unit.id, progress.unitProgress) ??
                     ProgressModel(unitId: unit.id, totalMaterials: unit.totalSlides);
                 final isLocked = _isUnitLocked(
                   unitIndex: index,
                   orderedUnits: units,
                   progress: progress.unitProgress,
                 );
-                final pct = unitProgress.materialProgress;
+                final doneSlides = LearningProgressHelper.completedSlides(unitProgress, unit);
+                final pct = unit.totalSlides > 0 ? doneSlides / unit.totalSlides : 0.0;
 
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 12),
                   child: GestureDetector(
                     onTap: isLocked ? null : () {
-                      ref.read(materialProvider.notifier).setActiveUnit(unit.id);
+                      final resumeSlide = LearningProgressHelper.resumeSlideIndex(
+                        unitProgress,
+                        unit,
+                      );
+                      ref.read(materialProvider.notifier).setActiveUnit(
+                            unit.id,
+                            slideIndex: resumeSlide,
+                          );
                       context.push('/material/${unit.id}');
                     },
                     child: Opacity(

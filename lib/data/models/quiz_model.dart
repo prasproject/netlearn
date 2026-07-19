@@ -90,4 +90,5 @@ enum QuizType {
   posttest,
   checkpoint,
   finalQuiz,
+  practice,
 }

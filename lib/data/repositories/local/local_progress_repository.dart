@@ -1,5 +1,6 @@
 import 'package:get_storage/get_storage.dart';
 import '../../models/progress_model.dart';
+import '../../models/reflection_model.dart';
 import '../progress_repository.dart';
 
 import '../../seed/seed_data.dart';
@@ -8,10 +9,11 @@ import '../../seed/seed_data.dart';
 /// Used for offline caching.
 class LocalProgressRepository implements ProgressRepository {
   final GetStorage _box = GetStorage();
-  
+
   // Storage keys
   static const String _keyProgress = 'netlearn_progress_';
   static const String _keyAchievements = 'netlearn_achievements_';
+  static const String _keyReflection = 'netlearn_reflection_';
 
   @override
   Future<List<ProgressModel>> getProgress(String userId) async {
@@ -51,6 +53,7 @@ class LocalProgressRepository implements ProgressRepository {
     int? pretestScore,
     int? checkpointScore,
     int? finalScore,
+    int? practiceScore,
   }) async {
     final List<ProgressModel> currentProgress = await getProgress(userId);
     final index = currentProgress.indexWhere((p) => p.unitId == unitId);
@@ -62,6 +65,7 @@ class LocalProgressRepository implements ProgressRepository {
         p = p.copyWith(checkpointScores: [...p.checkpointScores, checkpointScore]);
       }
       if (finalScore != null) p = p.copyWith(finalScore: finalScore);
+      if (practiceScore != null) p = p.copyWith(practiceScore: practiceScore);
       currentProgress[index] = p;
     } else {
       // Fallback if not started yet
@@ -72,6 +76,7 @@ class LocalProgressRepository implements ProgressRepository {
           pretestScore: pretestScore,
           checkpointScores: checkpointScore != null ? [checkpointScore] : [],
           finalScore: finalScore,
+          practiceScore: practiceScore,
         )
       );
     }
@@ -86,13 +91,17 @@ class LocalProgressRepository implements ProgressRepository {
   Future<List<AchievementModel>> getAchievements(String userId) async {
     final List<dynamic>? dataList = _box.read('$_keyAchievements$userId');
     if (dataList == null) {
-      // Seed initial data
       await _box.write('$_keyAchievements$userId', SeedData.achievements.map((a) => a.toJson()).toList());
       return SeedData.achievements;
     }
-    
-    return dataList
-        .map((json) => AchievementModel.fromJson(Map<String, dynamic>.from(json)))
+
+    final byId = {
+      for (final a in dataList
+          .map((json) => AchievementModel.fromJson(Map<String, dynamic>.from(json))))
+        a.id: a,
+    };
+    return SeedData.achievements
+        .map((seed) => SeedData.mergeAchievement(seed, byId[seed.id]))
         .toList();
   }
 
@@ -109,6 +118,7 @@ class LocalProgressRepository implements ProgressRepository {
       '$_keyAchievements$userId',
       SeedData.achievements.map((a) => a.toJson()).toList(),
     );
+    await _box.remove('$_keyReflection$userId');
   }
 
   @override
@@ -129,9 +139,21 @@ class LocalProgressRepository implements ProgressRepository {
       current[index] = updated;
       
       await _box.write(
-        '$_keyAchievements$userId', 
+        '$_keyAchievements$userId',
         current.map((a) => a.toJson()).toList(),
       );
     }
+  }
+
+  @override
+  Future<ReflectionModel?> getReflection(String userId) async {
+    final Map<String, dynamic>? data = _box.read('$_keyReflection$userId');
+    if (data == null) return null;
+    return ReflectionModel.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  @override
+  Future<void> saveReflection(String userId, ReflectionModel reflection) async {
+    await _box.write('$_keyReflection$userId', reflection.toJson());
   }
 }

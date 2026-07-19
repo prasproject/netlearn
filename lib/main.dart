@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -8,6 +9,23 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:get_storage/get_storage.dart';
 import 'firebase_options.dart';
 import 'app.dart';
+import 'data/models/material_model.dart';
+import 'data/seed/seed_data.dart';
+
+Future<void> _loadSeedMaterials() async {
+  try {
+    final jsonStr = await rootBundle.loadString('assets/data/materials.json');
+    final data = jsonDecode(jsonStr) as Map<String, dynamic>;
+    final materials = data.entries.map((e) {
+      final map = Map<String, dynamic>.from(e.value as Map);
+      map['id'] = e.key;
+      return MaterialModel.fromJson(map);
+    }).toList();
+    SeedData.setMaterials(materials);
+  } catch (e) {
+    debugPrint('Seed materials load warning: $e');
+  }
+}
 
 /// NetLearn — Main entry point
 /// Interactive LMS for Computer Networking Education
@@ -17,6 +35,9 @@ void main() async {
 
   // Initialize Local Storage (GetStorage)
   await GetStorage.init();
+
+  // Muat snapshot materi Firebase ke lokal (fallback offline + badge sync)
+  await _loadSeedMaterials();
 
   // Try to initialize Firebase, fallback gracefully if not configured
   try {

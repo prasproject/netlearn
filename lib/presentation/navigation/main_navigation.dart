@@ -7,6 +7,8 @@ import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../domain/providers/auth_provider.dart';
 import '../../domain/providers/tutorial_provider.dart';
+import '../../domain/providers/material_provider.dart' as mat;
+import '../../domain/providers/progress_provider.dart';
 import '../home/home_screen.dart';
 import '../material/material_list_screen.dart';
 import '../simulation/simulation_screen.dart';
@@ -25,6 +27,7 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
   final _storage = GetStorage();
   TourController? _tourController;
   ProviderSubscription<int>? _tutorialTriggerSub;
+  ProviderSubscription<mat.MaterialState>? _materialSyncSub;
 
   final _homeKey = GlobalKey();
   final _materialKey = GlobalKey();
@@ -58,6 +61,7 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
           }
           return;
         }
+        _syncProgressWithMaterials();
         _startTutorialIfNeeded();
       },
     );
@@ -69,12 +73,27 @@ class _MainNavigationState extends ConsumerState<MainNavigation> {
       if (prev == next) return;
       _startTutorialIfNeeded(force: true);
     });
+
+    _materialSyncSub = ref.listenManual<mat.MaterialState>(mat.materialProvider, (
+      prev,
+      next,
+    ) {
+      if (next.materials.isEmpty) return;
+      ref.read(progressProvider.notifier).syncAllMaterialTotals(next.materials);
+    });
+  }
+
+  void _syncProgressWithMaterials() {
+    final materials = ref.read(mat.materialProvider).materials;
+    if (materials.isEmpty) return;
+    ref.read(progressProvider.notifier).syncAllMaterialTotals(materials);
   }
 
   @override
   void dispose() {
     _tourController?.end();
     _tutorialTriggerSub?.close();
+    _materialSyncSub?.close();
     super.dispose();
   }
 

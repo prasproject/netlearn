@@ -46,8 +46,17 @@ class MaterialNotifier extends StateNotifier<MaterialState> {
 
   Future<void> refreshMaterials() async => _loadMaterials();
 
-  void setActiveUnit(String unitId) {
-    state = state.copyWith(activeUnitId: unitId, currentSlideIndex: 0);
+  void setActiveUnit(String unitId, {int slideIndex = 0}) {
+    final maxIndex = () {
+      try {
+        final unit = state.materials.firstWhere((m) => m.id == unitId);
+        return unit.totalSlides - 1;
+      } catch (_) {
+        return 0;
+      }
+    }();
+    final safeIndex = slideIndex.clamp(0, maxIndex < 0 ? 0 : maxIndex);
+    state = state.copyWith(activeUnitId: unitId, currentSlideIndex: safeIndex);
   }
 
   void resetLearningSession() {

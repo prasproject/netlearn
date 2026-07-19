@@ -12,12 +12,15 @@ import '../../presentation/quiz/pretest_screen.dart';
 import '../../presentation/quiz/posttest_quiz_screen.dart';
 import '../../presentation/quiz/test_menu_screen.dart';
 import '../../presentation/quiz/checkpoint_screen.dart';
+import '../../presentation/quiz/practice_quiz_screen.dart';
 import '../../presentation/quiz/quiz_screen.dart';
 import '../../presentation/quiz/feedback_screen.dart';
 import '../../presentation/progress/progress_screen.dart';
 import '../../presentation/progress/post_test_screen.dart';
 import '../../presentation/certificate/certificate_screen.dart';
 import '../../presentation/profile/profile_screen.dart';
+import '../../presentation/capaian/capaian_screen.dart';
+import '../../presentation/reflection/reflection_screen.dart';
 
 // Admin Screens
 import '../../presentation/admin/admin_dashboard_screen.dart';
@@ -105,6 +108,16 @@ class AppRouter {
         ),
       ),
 
+      // ── Capaian ──
+      GoRoute(
+        path: '/capaian',
+        name: 'capaian',
+        pageBuilder: (context, state) => _buildSlide(
+          state,
+          const CapaianScreen(),
+        ),
+      ),
+
       // ── Material ──
       GoRoute(
         path: '/materials',
@@ -168,6 +181,22 @@ class AppRouter {
           state,
           const PosttestQuizScreen(),
         ),
+      ),
+      GoRoute(
+        path: '/practice/:unitId',
+        name: 'practice',
+        pageBuilder: (context, state) {
+          final unitId = state.pathParameters['unitId'] ?? 'unit-1';
+          final extra = state.extra as Map<String, dynamic>? ?? {};
+          return _buildSlide(
+            state,
+            PracticeQuizScreen(
+              unitId: unitId,
+              unitTitle: extra['unitTitle'] as String? ?? '',
+              popMaterialDetail: extra['popMaterialDetail'] as bool? ?? false,
+            ),
+          );
+        },
       ),
       GoRoute(
         path: '/checkpoint/:unitId',
@@ -234,6 +263,16 @@ class AppRouter {
         pageBuilder: (context, state) => _buildSlide(
           state,
           const CertificateScreen(),
+        ),
+      ),
+
+      // ── Reflection ──
+      GoRoute(
+        path: '/reflection',
+        name: 'reflection',
+        pageBuilder: (context, state) => _buildSlide(
+          state,
+          const ReflectionScreen(),
         ),
       ),
 

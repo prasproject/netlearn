@@ -71,6 +71,10 @@ class AppStrings {
   static const String nextSlide = 'Lanjut';
   static const String basicConcept = 'Konsep Dasar';
   static const String newBadge = 'Baru';
+  static const String practiceQuiz = 'Latihan Quiz';
+  static const String practiceFinish = 'Selesai Latihan';
+  static const String practiceComplete = 'Latihan Selesai!';
+  static const String practiceResult = 'Kamu menjawab %d dari %d soal dengan benar (skor %d%).';
 
   // ── Simulation ──
   static const String interaktif = 'Interaktif';

@@ -34,11 +34,11 @@ class _CertificateScreenState extends ConsumerState<CertificateScreen> {
     try {
       final path = await CertificateGenerator.generate(
         studentName: user.displayName,
-        finalScore: progress.overallPosttestScore,
+        finalScore: progress.overallPosttestScore ?? 0,
         nGain: progress.nGain,
         totalXp: user.xp,
-        pretestScore: progress.overallPretestScore,
-        posttestScore: progress.overallPosttestScore,
+        pretestScore: progress.overallPretestScore ?? 0,
+        posttestScore: progress.overallPosttestScore ?? 0,
       );
 
       setState(() {
@@ -138,7 +138,7 @@ class _CertificateScreenState extends ConsumerState<CertificateScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          _statBox('${progress.overallPosttestScore}', 'Skor Akhir'),
+                          _statBox('${progress.overallPosttestScore ?? 0}', 'Skor Akhir'),
                           const SizedBox(width: 10),
                           _statBox(progress.nGain.toStringAsFixed(2), 'N-Gain'),
                           const SizedBox(width: 10),

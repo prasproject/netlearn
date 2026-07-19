@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/models/user_model.dart';
 import '../../data/repositories/auth_repository.dart';
+import '../services/streak_service.dart';
 import 'repository_providers.dart';
 
 /// Auth state
@@ -19,19 +20,21 @@ class AuthState {
     this.authError,
   });
 
+  static const _unset = Object();
+
   AuthState copyWith({
     UserModel? user,
     bool? isLoading,
     bool? isLoggedIn,
     bool? isNewUser,
-    String? authError,
+    Object? authError = _unset,
   }) {
     return AuthState(
       user: user ?? this.user,
       isLoading: isLoading ?? this.isLoading,
       isLoggedIn: isLoggedIn ?? this.isLoggedIn,
       isNewUser: isNewUser ?? this.isNewUser,
-      authError: authError,
+      authError: identical(authError, _unset) ? this.authError : authError as String?,
     );
   }
 }
@@ -55,6 +58,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
           isLoggedIn: true,
           isNewUser: false,
         );
+        await _refreshDailyStreak();
         return;
       }
       state = const AuthState();
@@ -98,6 +102,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
           isLoggedIn: true,
           isNewUser: false,
         );
+        await _refreshDailyStreak();
         return true;
       }
     } catch (e) {
@@ -129,6 +134,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
           isLoggedIn: true,
           isNewUser: true,
         );
+        await _refreshDailyStreak();
         return true;
       }
     } catch (e) {
@@ -144,24 +150,64 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   void markNewUserTutorialSeen() {
     if (!state.isNewUser) return;
-    state = state.copyWith(isNewUser: false, authError: state.authError);
+    state = state.copyWith(isNewUser: false);
   }
 
   // --- Profile methods ---
 
   void addXP(int amount) {
-    if (state.user == null) return;
-    final updated = state.user!.copyWith(xp: state.user!.xp + amount);
+    if (state.user == null || amount <= 0) return;
+    final current = state.user!;
+    final newXp = current.xp + amount;
+    final newLevel = (newXp ~/ 100) + 1;
+    final updated = current.copyWith(xp: newXp, level: newLevel);
     state = state.copyWith(user: updated, isLoggedIn: true);
     _repo.updateUser(updated);
   }
 
   void updateStreak(int days) {
     if (state.user == null) return;
+    final updated = state.user!.copyWith(streak: days);
     state = state.copyWith(
-      user: state.user!.copyWith(streak: days),
+      user: updated,
       isLoggedIn: true,
     );
+    _repo.updateUser(updated);
+  }
+
+  /// Perbarui streak harian berdasarkan tanggal aktivitas terakhir.
+  Future<void> _refreshDailyStreak() async {
+    final user = state.user;
+    if (user == null || user.role == 'admin') return;
+
+    final now = DateTime.now();
+    final result = StreakService.refresh(
+      currentStreak: user.streak,
+      lastActive: user.lastActive,
+      now: now,
+    );
+
+    final updated = user.copyWith(
+      streak: result.streak,
+      lastActive: now,
+    );
+
+    final streakChanged = updated.streak != user.streak;
+    final lastActiveDayChanged = _isDifferentDay(updated.lastActive, user.lastActive);
+
+    if (streakChanged || lastActiveDayChanged) {
+      await _repo.updateUser(updated);
+    }
+
+    state = state.copyWith(user: updated, isLoggedIn: true);
+  }
+
+  bool _isDifferentDay(DateTime a, DateTime b) {
+    final localA = a.toLocal();
+    final localB = b.toLocal();
+    return localA.year != localB.year ||
+        localA.month != localB.month ||
+        localA.day != localB.day;
   }
 
   void toggleDarkMode() {

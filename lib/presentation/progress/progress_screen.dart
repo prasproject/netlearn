@@ -18,7 +18,7 @@ class ProgressScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final progress = ref.watch(progressProvider);
     final user = ref.watch(authProvider).user;
-    final hasPretestScore = progress.overallPretestScore > 0;
+    final hasPretestScore = progress.hasCompletedPretest;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -111,8 +111,8 @@ class ProgressScreen extends ConsumerWidget {
 
                   const SizedBox(height: 24),
 
-                  // ── Bar Chart: Skor Per Unit ──
-                  Text('SKOR PER UNIT', style: AppTextStyles.eyebrow.copyWith(color: AppColors.progressTeal)),
+                  // ── Bar Chart: Skor Latihan Per Unit ──
+                  Text('SKOR LATIHAN PER UNIT', style: AppTextStyles.eyebrow.copyWith(color: AppColors.progressTeal)),
                   const SizedBox(height: 8),
                   Container(
                     height: 200,
@@ -130,9 +130,8 @@ class ProgressScreen extends ConsumerWidget {
                           touchTooltipData: BarTouchTooltipData(
                             getTooltipColor: (_) => AppColors.progressTeal,
                             getTooltipItem: (group, groupIndex, rod, rodIndex) {
-                              final label = rodIndex == 0 ? 'Pre' : 'Post';
                               return BarTooltipItem(
-                                '$label: ${rod.toY.toInt()}',
+                                'Latihan: ${rod.toY.toInt()}',
                                 AppTextStyles.labelTiny.copyWith(color: Colors.white),
                               );
                             },
@@ -146,12 +145,11 @@ class ProgressScreen extends ConsumerWidget {
                             sideTitles: SideTitles(
                               showTitles: true,
                               getTitlesWidget: (value, meta) {
-                                final labels = ['U1', 'U2', 'U3', 'U4', 'U5'];
                                 final idx = value.toInt();
-                                if (idx < 0 || idx >= labels.length) return const SizedBox();
+                                if (idx < 0 || idx >= progress.unitProgress.length) return const SizedBox();
                                 return Padding(
                                   padding: const EdgeInsets.only(top: 6),
-                                  child: Text(labels[idx],
+                                  child: Text('U${idx + 1}',
                                     style: AppTextStyles.labelTiny.copyWith(color: AppColors.textMuted, fontWeight: FontWeight.w700)),
                                 );
                               },
@@ -180,16 +178,6 @@ class ProgressScreen extends ConsumerWidget {
                       ),
                     ),
                   ).animate().fadeIn(delay: 400.ms, duration: 500.ms),
-                  const SizedBox(height: 8),
-                  // Legend
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      _legendDot(AppColors.accentOrange, 'Pre-Test'),
-                      const SizedBox(width: 16),
-                      _legendDot(AppColors.progressTealAccent, 'Post-Test'),
-                    ],
-                  ),
 
                   const SizedBox(height: 24),
 
@@ -247,7 +235,7 @@ class ProgressScreen extends ConsumerWidget {
                       children: [
                         Text('N-GAIN SEMENTARA', style: AppTextStyles.eyebrow.copyWith(color: AppColors.progressTeal)),
                         const SizedBox(height: 4),
-                        Text('Pre: ${progress.overallPretestScore} → Post parsial: ${progress.overallPosttestScore}',
+                        Text('Pre: ${progress.overallPretestScore ?? 0} → Post parsial: ${progress.overallPosttestScore ?? 0}',
                           style: AppTextStyles.bodySmall),
                         const SizedBox(height: 4),
                         Row(
@@ -296,22 +284,17 @@ class ProgressScreen extends ConsumerWidget {
     );
   }
 
-  /// Build grouped bar chart data — Pre vs Post per unit
+  /// Build bar chart data — Latihan score per unit
   List<BarChartGroupData> _buildBarGroups(ProgressState progress) {
     return List.generate(progress.unitProgress.length, (i) {
       final p = progress.unitProgress[i];
-      final pre = p.pretestScore?.toDouble() ?? 0;
-      final post = (p.finalScore ?? p.checkpointAverage)?.toDouble() ?? 0;
+      final practice = p.practiceScore?.toDouble() ?? 0;
       return BarChartGroupData(
         x: i,
         barRods: [
           BarChartRodData(
-            toY: pre, color: AppColors.accentOrange,
-            width: 10, borderRadius: BorderRadius.circular(4),
-          ),
-          BarChartRodData(
-            toY: post, color: AppColors.progressTealAccent,
-            width: 10, borderRadius: BorderRadius.circular(4),
+            toY: practice, color: AppColors.progressTealAccent,
+            width: 16, borderRadius: BorderRadius.circular(4),
           ),
         ],
       );

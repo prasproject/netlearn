@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../models/progress_model.dart';
+import '../../models/reflection_model.dart';
 import '../../seed/seed_data.dart';
 import '../progress_repository.dart';
 
@@ -35,6 +36,7 @@ class FirestoreProgressRepository implements ProgressRepository {
     int? pretestScore,
     int? checkpointScore,
     int? finalScore,
+    int? practiceScore,
   }) async {
     final docRef = _firestore
         .collection('users')
@@ -56,6 +58,7 @@ class FirestoreProgressRepository implements ProgressRepository {
           if (pretestScore != null) 'pretestScore': pretestScore,
           if (checkpointScore != null) 'checkpointScores': [checkpointScore],
           if (finalScore != null) 'finalScore': finalScore,
+          if (practiceScore != null) 'practiceScore': practiceScore,
         });
         return;
       }
@@ -64,7 +67,8 @@ class FirestoreProgressRepository implements ProgressRepository {
 
       if (pretestScore != null) updates['pretestScore'] = pretestScore;
       if (finalScore != null) updates['finalScore'] = finalScore;
-      
+      if (practiceScore != null) updates['practiceScore'] = practiceScore;
+
       if (checkpointScore != null) {
         // Append to array
         updates['checkpointScores'] = FieldValue.arrayUnion([checkpointScore]);
@@ -80,7 +84,9 @@ class FirestoreProgressRepository implements ProgressRepository {
   Future<List<AchievementModel>> getAchievements(String userId) async {
     List<AchievementModel> mergeWithSeed(List<AchievementModel> source) {
       final byId = {for (final a in source) a.id: a};
-      return SeedData.achievements.map((seed) => byId[seed.id] ?? seed).toList();
+      return SeedData.achievements
+          .map((seed) => SeedData.mergeAchievement(seed, byId[seed.id]))
+          .toList();
     }
 
     final snapshot = await _firestore
@@ -113,6 +119,13 @@ class FirestoreProgressRepository implements ProgressRepository {
     for (final doc in achievementsSnap.docs) {
       await doc.reference.delete();
     }
+
+    await _firestore
+        .collection('users')
+        .doc(userId)
+        .collection('reflection')
+        .doc('post-test')
+        .delete();
   }
 
   @override
@@ -138,5 +151,27 @@ class FirestoreProgressRepository implements ProgressRepository {
       'isUnlocked': true,
       'unlockedAt': DateTime.now().toIso8601String(),
     }, SetOptions(merge: true));
+  }
+
+  @override
+  Future<ReflectionModel?> getReflection(String userId) async {
+    final doc = await _firestore
+        .collection('users')
+        .doc(userId)
+        .collection('reflection')
+        .doc('post-test')
+        .get();
+    if (!doc.exists || doc.data() == null) return null;
+    return ReflectionModel.fromJson(doc.data()!);
+  }
+
+  @override
+  Future<void> saveReflection(String userId, ReflectionModel reflection) async {
+    await _firestore
+        .collection('users')
+        .doc(userId)
+        .collection('reflection')
+        .doc('post-test')
+        .set(reflection.toJson(), SetOptions(merge: true));
   }
 }

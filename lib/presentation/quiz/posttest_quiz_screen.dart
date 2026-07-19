@@ -26,7 +26,7 @@ class _PosttestQuizScreenState extends ConsumerState<PosttestQuizScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final progress = ref.read(progressProvider);
-      final hasPretestScore = progress.overallPretestScore > 0;
+      final hasPretestScore = progress.hasCompletedPretest;
       if (!hasPretestScore) {
         if (mounted) context.pushReplacement('/pretest');
         return;

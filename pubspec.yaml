@@ -72,3 +72,4 @@ flutter:
     - assets/images/
     - assets/lottie/
     - assets/audio/
+    - assets/data/materials.json

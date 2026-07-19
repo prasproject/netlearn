@@ -1,4 +1,5 @@
 import '../../models/progress_model.dart';
+import '../../models/reflection_model.dart';
 import '../../seed/seed_data.dart';
 import '../progress_repository.dart';
 
@@ -6,6 +7,7 @@ import '../progress_repository.dart';
 class MockProgressRepository implements ProgressRepository {
   final List<ProgressModel> _progress = List.from(SeedData.demoProgress);
   final List<AchievementModel> _achievements = List.from(SeedData.achievements);
+  ReflectionModel? _reflection;
 
   @override
   Future<List<ProgressModel>> getProgress(String userId) async => _progress;
@@ -22,7 +24,7 @@ class MockProgressRepository implements ProgressRepository {
 
   @override
   Future<void> saveQuizScore(String userId, String unitId,
-      {int? pretestScore, int? checkpointScore, int? finalScore}) async {
+      {int? pretestScore, int? checkpointScore, int? finalScore, int? practiceScore}) async {
     final idx = _progress.indexWhere((p) => p.unitId == unitId);
     if (idx >= 0) {
       var p = _progress[idx];
@@ -31,6 +33,7 @@ class MockProgressRepository implements ProgressRepository {
         p = p.copyWith(checkpointScores: [...p.checkpointScores, checkpointScore]);
       }
       if (finalScore != null) p = p.copyWith(finalScore: finalScore);
+      if (practiceScore != null) p = p.copyWith(practiceScore: practiceScore);
       _progress[idx] = p;
     }
   }
@@ -50,6 +53,7 @@ class MockProgressRepository implements ProgressRepository {
     _achievements
       ..clear()
       ..addAll(SeedData.achievements);
+    _reflection = null;
   }
 
   @override
@@ -67,5 +71,13 @@ class MockProgressRepository implements ProgressRepository {
       isUnlocked: true,
       unlockedAt: DateTime.now(),
     );
+  }
+
+  @override
+  Future<ReflectionModel?> getReflection(String userId) async => _reflection;
+
+  @override
+  Future<void> saveReflection(String userId, ReflectionModel reflection) async {
+    _reflection = reflection;
   }
 }

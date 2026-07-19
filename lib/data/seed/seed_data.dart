@@ -36,7 +36,22 @@ class SeedData {
   );
 
   // ── Materials (5 Units) ──
-  static final List<MaterialModel> materials = [
+  static List<MaterialModel> _loadedMaterials = [];
+
+  /// Override materi lokal dengan snapshot terbaru (mis. dari Firebase).
+  static void setMaterials(List<MaterialModel> materials) {
+    _loadedMaterials = List<MaterialModel>.from(materials)
+      ..sort((a, b) {
+        final o = a.order.compareTo(b.order);
+        if (o != 0) return o;
+        return a.unitNumber.compareTo(b.unitNumber);
+      });
+  }
+
+  static List<MaterialModel> get materials =>
+      _loadedMaterials.isNotEmpty ? _loadedMaterials : _legacyMaterials;
+
+  static final List<MaterialModel> _legacyMaterials = [
     MaterialModel(
       id: 'unit-1', unitNumber: 1, order: 0, iconEmoji: '🌐',
       title: 'Pengantar Jaringan Komputer',
@@ -197,6 +212,66 @@ class SeedData {
         const QuizQuestion(question: 'Fungsi DNS adalah...', options: ['Mengirim email', 'Mengubah nama domain menjadi IP', 'Mengenkripsi data', 'Menyimpan file'], correctIndex: 1, explanation: 'DNS menerjemahkan nama domain ke alamat IP.', topic: 'Protokol'),
         const QuizQuestion(question: 'Routing statis cocok untuk...', options: ['Jaringan besar', 'Jaringan kecil', 'Internet', 'Cloud'], correctIndex: 1, explanation: 'Routing statis mudah dikonfigurasi untuk jaringan kecil.', topic: 'Routing'),
         const QuizQuestion(question: 'Firewall berfungsi untuk...', options: ['Mempercepat koneksi', 'Memfilter lalu lintas jaringan', 'Menyimpan data', 'Mengirim email'], correctIndex: 1, explanation: 'Firewall memfilter lalu lintas berdasarkan aturan keamanan.', topic: 'Keamanan'),
+      ],
+    ),
+    // Latihan Unit 1 — Pengantar Jaringan
+    QuizModel(
+      id: 'practice-unit-1', type: QuizType.practice, unitId: 'unit-1',
+      title: 'Latihan Unit 1', timeLimitSeconds: 600, xpReward: 10,
+      questions: [
+        const QuizQuestion(question: 'Jaringan komputer adalah...', options: ['Kumpulan perangkat terhubung untuk berbagi data', 'Program antivirus', 'Jenis kabel internet', 'Aplikasi chat'], correctIndex: 0, explanation: 'Jaringan komputer menghubungkan perangkat agar bisa berbagi data dan sumber daya.', topic: 'Pengantar'),
+        const QuizQuestion(question: 'Internet adalah...', options: ['Jaringan lokal sekolah', 'Sistem komunikasi global antar komputer', 'Jenis topologi bus', 'Perangkat router saja'], correctIndex: 1, explanation: 'Internet menghubungkan komputer di seluruh dunia.', topic: 'Pengantar'),
+        const QuizQuestion(question: 'Salah satu manfaat jaringan komputer adalah...', options: ['Menghapus virus otomatis', 'Berbagi file dan data', 'Mematikan komputer jarak jauh', 'Mengganti password Wi-Fi'], correctIndex: 1, explanation: 'Jaringan memudahkan berbagi file, printer, dan komunikasi.', topic: 'Pengantar'),
+        const QuizQuestion(question: 'Fungsi utama IP Address adalah...', options: ['Menyimpan foto', 'Mengidentifikasi perangkat dalam jaringan', 'Mempercepat prosesor', 'Mengunci layar'], correctIndex: 1, explanation: 'IP Address seperti alamat rumah untuk perangkat di jaringan.', topic: 'Pengantar'),
+        const QuizQuestion(question: 'Contoh format alamat IPv4 yang benar adalah...', options: ['192.168.1.1', 'AB:CD:EF:12', 'www.google.com', '255-255-255-0'], correctIndex: 0, explanation: 'IPv4 ditulis dalam format desimal bertitik.', topic: 'Pengantar'),
+      ],
+    ),
+    // Latihan Unit 2 — Jenis Jaringan
+    QuizModel(
+      id: 'practice-unit-2', type: QuizType.practice, unitId: 'unit-2',
+      title: 'Latihan Unit 2', timeLimitSeconds: 600, xpReward: 10,
+      questions: [
+        const QuizQuestion(question: 'LAN (Local Area Network) mencakup area...', options: ['Antar benua', 'Satu gedung atau area kecil', 'Seluruh dunia', 'Antar planet'], correctIndex: 1, explanation: 'LAN adalah jaringan lokal seperti lab komputer sekolah.', topic: 'Jenis Jaringan'),
+        const QuizQuestion(question: 'Contoh penerapan LAN adalah...', options: ['Internet global', 'Jaringan komputer di laboratorium sekolah', 'Satelit komunikasi', 'Jaringan antar negara'], correctIndex: 1, explanation: 'LAN digunakan di area terbatas seperti ruang lab.', topic: 'Jenis Jaringan'),
+        const QuizQuestion(question: 'MAN (Metropolitan Area Network) mencakup...', options: ['Satu ruangan', 'Satu kota atau wilayah luas', 'Hanya satu PC', 'Hanya printer'], correctIndex: 1, explanation: 'MAN menghubungkan jaringan dalam satu kota.', topic: 'Jenis Jaringan'),
+        const QuizQuestion(question: 'WAN (Wide Area Network) adalah jaringan dengan jangkauan...', options: ['Sangat sempit', 'Sangat luas hingga antar negara', 'Hanya kabel UTP', 'Hanya Bluetooth'], correctIndex: 1, explanation: 'WAN seperti internet menghubungkan area geografis sangat luas.', topic: 'Jenis Jaringan'),
+        const QuizQuestion(question: 'Internet termasuk jenis jaringan...', options: ['LAN', 'MAN', 'WAN', 'PAN'], correctIndex: 2, explanation: 'Internet adalah contoh WAN karena jangkauannya global.', topic: 'Jenis Jaringan'),
+      ],
+    ),
+    // Latihan Unit 3 — Topologi
+    QuizModel(
+      id: 'practice-unit-3', type: QuizType.practice, unitId: 'unit-3',
+      title: 'Latihan Unit 3', timeLimitSeconds: 600, xpReward: 10,
+      questions: [
+        const QuizQuestion(question: 'Topologi bus menggunakan...', options: ['Satu kabel utama', 'Switch pusat saja', 'Lingkaran tertutup', 'Setiap PC saling hubung'], correctIndex: 0, explanation: 'Topologi bus menghubungkan semua perangkat ke satu kabel utama.', topic: 'Topologi'),
+        const QuizQuestion(question: 'Kekurangan topologi bus adalah...', options: ['Membutuhkan banyak switch', 'Jika kabel utama rusak, jaringan terganggu', 'Tidak bisa dipakai di sekolah', 'Hanya untuk internet'], correctIndex: 1, explanation: 'Kerusakan kabel utama memengaruhi seluruh jaringan bus.', topic: 'Topologi'),
+        const QuizQuestion(question: 'Topologi star menghubungkan semua komputer ke...', options: ['Kabel bus panjang', 'Switch atau hub pusat', 'Router internasional', 'Modem saja'], correctIndex: 1, explanation: 'Topologi star berpusat pada switch/hub.', topic: 'Topologi'),
+        const QuizQuestion(question: 'Kelebihan topologi star adalah...', options: ['Hemat kabel total', 'Mudah diperbaiki jika satu kabel rusak', 'Tidak perlu switch', 'Tidak pernah putus'], correctIndex: 1, explanation: 'Jika satu kabel rusak, perangkat lain tetap berjalan.', topic: 'Topologi'),
+        const QuizQuestion(question: 'Topologi ring menghubungkan perangkat membentuk...', options: ['Garis lurus', 'Lingkaran', 'Bintang', 'Segitiga'], correctIndex: 1, explanation: 'Topologi ring membentuk jalur melingkar.', topic: 'Topologi'),
+      ],
+    ),
+    // Latihan Unit 4 — Konektivitas
+    QuizModel(
+      id: 'practice-unit-4', type: QuizType.practice, unitId: 'unit-4',
+      title: 'Latihan Unit 4', timeLimitSeconds: 600, xpReward: 10,
+      questions: [
+        const QuizQuestion(question: 'Konektivitas kabel (wired) menggunakan...', options: ['Gelombang radio', 'Kabel sebagai media transmisi', 'Satelit saja', 'Bluetooth'], correctIndex: 1, explanation: 'Wired network menggunakan kabel seperti UTP.', topic: 'Konektivitas'),
+        const QuizQuestion(question: 'ADSL menggunakan media...', options: ['Kabel fiber optik saja', 'Kabel telepon', 'Bluetooth', 'Infra merah'], correctIndex: 1, explanation: 'ADSL memanfaatkan jalur telepon dengan kecepatan lebih tinggi dari dial-up.', topic: 'Konektivitas'),
+        const QuizQuestion(question: 'Wi-Fi termasuk konektivitas...', options: ['Kabel', 'Nirkabel (wireless)', 'Dial-up', 'PSTN'], correctIndex: 1, explanation: 'Wi-Fi menggunakan gelombang radio tanpa kabel.', topic: 'Konektivitas'),
+        const QuizQuestion(question: 'Kelebihan konektivitas kabel adalah...', options: ['Tidak perlu instalasi', 'Koneksi stabil dan cepat', 'Bisa dipakai tanpa listrik', 'Tidak ada biaya'], correctIndex: 1, explanation: 'Koneksi kabel umumnya lebih stabil dibanding nirkabel.', topic: 'Konektivitas'),
+        const QuizQuestion(question: 'Kekurangan konektivitas nirkabel adalah...', options: ['Harus selalu pakai kabel', 'Sinyal dapat terganggu', 'Tidak bisa untuk HP', 'Tidak bisa akses internet'], correctIndex: 1, explanation: 'Sinyal wireless rentan gangguan jarak dan halangan.', topic: 'Konektivitas'),
+      ],
+    ),
+    // Latihan Unit 5 — Komunikasi Data
+    QuizModel(
+      id: 'practice-unit-5', type: QuizType.practice, unitId: 'unit-5',
+      title: 'Latihan Unit 5', timeLimitSeconds: 600, xpReward: 10,
+      questions: [
+        const QuizQuestion(question: 'Komunikasi data adalah...', options: ['Menukar informasi lewat perangkat digital', 'Memperbaiki kabel LAN', 'Mengetik di Word saja', 'Menggambar topologi'], correctIndex: 0, explanation: 'Komunikasi data terjadi lewat chat, email, video call, dll.', topic: 'Komunikasi Data'),
+        const QuizQuestion(question: 'Bluetooth pada ponsel digunakan untuk...', options: ['Berbagi data jarak dekat', 'Mengganti baterai', 'Mempercepat CPU', 'Mengunci layar otomatis'], correctIndex: 0, explanation: 'Bluetooth cocok untuk transfer data jarak pendek.', topic: 'Komunikasi Data'),
+        const QuizQuestion(question: 'Wi-Fi pada ponsel berfungsi untuk...', options: ['Mengisi daya baterai', 'Mengakses internet tanpa kabel', 'Menyimpan kontak', 'Merekam suara'], correctIndex: 1, explanation: 'Wi-Fi menghubungkan ponsel ke jaringan internet nirkabel.', topic: 'Komunikasi Data'),
+        const QuizQuestion(question: 'Password yang kuat sebaiknya terdiri dari...', options: ['Nama saja', 'Huruf, angka, dan simbol', 'Tanggal lahir saja', 'Satu huruf saja'], correctIndex: 1, explanation: 'Kombinasi huruf, angka, dan simbol lebih aman.', topic: 'Keamanan'),
+        const QuizQuestion(question: 'Phishing adalah...', options: ['Jenis kabel jaringan', 'Penipuan lewat link atau situs palsu', 'Protokol email', 'Topologi star'], correctIndex: 1, explanation: 'Phishing mencuri data lewat tautan atau website palsu.', topic: 'Keamanan'),
       ],
     ),
     // Checkpoint Unit 1
@@ -422,62 +497,68 @@ class SeedData {
   // ── Progress ──
   static final List<ProgressModel> demoProgress = [
     const ProgressModel(unitId: 'unit-1', materialsCompleted: 4, totalMaterials: 4, pretestScore: 45, checkpointScores: [80], finalScore: 85),
-    const ProgressModel(unitId: 'unit-2', materialsCompleted: 3, totalMaterials: 5, pretestScore: 40, checkpointScores: [70]),
+    const ProgressModel(unitId: 'unit-2', materialsCompleted: 3, totalMaterials: 3, pretestScore: 40, checkpointScores: [70]),
     const ProgressModel(unitId: 'unit-3', materialsCompleted: 2, totalMaterials: 3, pretestScore: 35),
-    const ProgressModel(unitId: 'unit-4', materialsCompleted: 0, totalMaterials: 3),
-    const ProgressModel(unitId: 'unit-5', materialsCompleted: 0, totalMaterials: 2),
+    const ProgressModel(unitId: 'unit-4', materialsCompleted: 0, totalMaterials: 2),
+    const ProgressModel(unitId: 'unit-5', materialsCompleted: 0, totalMaterials: 3),
   ];
 
-  // ── Achievements ──
-  static final List<AchievementModel> achievements = [
-    const AchievementModel(
-      id: 'badge-materi-1',
-      name: 'Pemula Jaringan',
-      description: 'Selesaikan topik Pengantar Jaringan Komputer',
-      iconEmoji: '⭐️',
-      tier: AchievementTier.bronze,
-    ),
-    const AchievementModel(
-      id: 'badge-materi-2',
-      name: 'Master IP',
-      description: 'Selesaikan topik IP Addressing',
-      iconEmoji: '🎯',
-      tier: AchievementTier.bronze,
-    ),
-    const AchievementModel(
-      id: 'badge-materi-3',
-      name: 'Juara Routing',
-      description: 'Selesaikan topik Routing Dasar',
-      iconEmoji: '🏆',
-      tier: AchievementTier.silver,
-    ),
-    const AchievementModel(
-      id: 'badge-materi-4',
-      name: 'Diamond Protokol',
-      description: 'Selesaikan topik Konektivitas & Protokol',
-      iconEmoji: '💎',
-      tier: AchievementTier.silver,
-    ),
-    const AchievementModel(
-      id: 'badge-materi-5',
-      name: 'Api Keamanan',
-      description: 'Selesaikan topik Keamanan Jaringan',
-      iconEmoji: '🔥',
-      tier: AchievementTier.gold,
-    ),
-    const AchievementModel(
-      id: 'badge-quiz',
-      name: 'Badge Quiz',
-      description: 'Selesaikan quiz unit',
-      iconEmoji: '🧠',
-      tier: AchievementTier.gold,
-    ),
-    const AchievementModel(
-      id: 'badge-simulasi',
-      name: 'Badge Simulasi',
-      description: 'Selesaikan simulasi jaringan',
-      iconEmoji: '🧩',
-      tier: AchievementTier.gold,
-    ),
+  static const _materialBadgeTiers = [
+    AchievementTier.bronze,
+    AchievementTier.bronze,
+    AchievementTier.silver,
+    AchievementTier.silver,
+    AchievementTier.gold,
   ];
+
+  /// Badge materi mengikuti judul/ikon unit terbaru dari [materials].
+  static List<AchievementModel> get achievements {
+    final materialBadges = <AchievementModel>[
+      for (var i = 0; i < materials.length; i++)
+        AchievementModel(
+          id: 'badge-materi-${materials[i].unitNumber}',
+          name: materials[i].title,
+          description: materials[i].description.isNotEmpty
+              ? 'Selesaikan: ${materials[i].description}'
+              : 'Selesaikan topik ${materials[i].title}',
+          iconEmoji: materials[i].iconEmoji ?? '⭐️',
+          tier: _materialBadgeTiers[i.clamp(0, _materialBadgeTiers.length - 1)],
+        ),
+    ];
+
+    return [
+      ...materialBadges,
+      const AchievementModel(
+        id: 'badge-quiz',
+        name: 'Badge Quiz',
+        description: 'Selesaikan quiz unit',
+        iconEmoji: '🧠',
+        tier: AchievementTier.gold,
+      ),
+      const AchievementModel(
+        id: 'badge-simulasi',
+        name: 'Badge Simulasi',
+        description: 'Selesaikan simulasi jaringan',
+        iconEmoji: '🧩',
+        tier: AchievementTier.gold,
+      ),
+    ];
+  }
+
+  /// Gabungkan metadata badge dari seed dengan status unlock dari remote.
+  static AchievementModel mergeAchievement(
+    AchievementModel seed,
+    AchievementModel? remote,
+  ) {
+    if (remote == null) return seed;
+    return AchievementModel(
+      id: seed.id,
+      name: seed.name,
+      description: seed.description,
+      iconEmoji: seed.iconEmoji,
+      tier: seed.tier,
+      isUnlocked: remote.isUnlocked,
+      unlockedAt: remote.unlockedAt,
+    );
+  }
 }

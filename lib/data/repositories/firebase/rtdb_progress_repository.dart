@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:get_storage/get_storage.dart';
 import '../../models/progress_model.dart';
+import '../../models/reflection_model.dart';
 import '../progress_repository.dart';
 import '../../seed/seed_data.dart';
 
@@ -9,6 +10,7 @@ import '../../seed/seed_data.dart';
 class RtdbProgressRepository implements ProgressRepository {
   final DatabaseReference _db = FirebaseDatabase.instance.ref('progress');
   final DatabaseReference _achDb = FirebaseDatabase.instance.ref('achievements');
+  final DatabaseReference _reflectionDb = FirebaseDatabase.instance.ref('reflection');
   final _storage = GetStorage();
   static const String _overallUnitId = '__overall__';
 
@@ -23,10 +25,12 @@ class RtdbProgressRepository implements ProgressRepository {
           if (existing == null) {
             return ProgressModel(unitId: m.id, materialsCompleted: 0, totalMaterials: m.totalSlides);
           }
-          // If older data missed totals, backfill from seed.
-          if (existing.unitId != _overallUnitId && existing.totalMaterials == 0) {
-            return existing.copyWith().copyWith(
-              // copyWith can't change totalMaterials; rebuild safely.
+          if (existing.totalMaterials != m.totalSlides) {
+            final completed = existing.materialsCompleted.clamp(0, m.totalSlides);
+            return existing.copyWith(
+              totalMaterials: m.totalSlides,
+              materialsCompleted: completed,
+              completedAt: completed >= m.totalSlides ? existing.completedAt : null,
             );
           }
           return existing;
@@ -103,13 +107,14 @@ class RtdbProgressRepository implements ProgressRepository {
   }
 
   @override
-  Future<void> saveQuizScore(String userId, String unitId, {int? pretestScore, int? checkpointScore, int? finalScore}) async {
+  Future<void> saveQuizScore(String userId, String unitId, {int? pretestScore, int? checkpointScore, int? finalScore, int? practiceScore}) async {
     final ref = _db.child(userId).child(unitId);
     final snapshot = await ref.get();
     
     Map<String, dynamic> updateData = {};
     if (pretestScore != null) updateData['pretestScore'] = pretestScore;
     if (finalScore != null) updateData['finalScore'] = finalScore;
+    if (practiceScore != null) updateData['practiceScore'] = practiceScore;
 
     // Ensure the record is parseable by `ProgressModel.fromJson` even for `__overall__`.
     // Some paths only store quiz meta and would otherwise miss required fields.
@@ -180,7 +185,9 @@ class RtdbProgressRepository implements ProgressRepository {
   Future<List<AchievementModel>> getAchievements(String userId) async {
     List<AchievementModel> mergeWithSeed(List<AchievementModel> source) {
       final byId = {for (final a in source) a.id: a};
-      return SeedData.achievements.map((seed) => byId[seed.id] ?? seed).toList();
+      return SeedData.achievements
+          .map((seed) => SeedData.mergeAchievement(seed, byId[seed.id]))
+          .toList();
     }
 
     try {
@@ -220,8 +227,10 @@ class RtdbProgressRepository implements ProgressRepository {
   Future<void> resetAllProgress(String userId) async {
     await _db.child(userId).remove();
     await _achDb.child(userId).remove();
+    await _reflectionDb.child(userId).remove();
     await _storage.remove('progress_$userId');
     await _storage.remove('achievements_$userId');
+    await _storage.remove('reflection_$userId');
   }
 
   @override
@@ -246,5 +255,36 @@ class RtdbProgressRepository implements ProgressRepository {
     final updated = existing[idx];
     await _achDb.child(userId).child(achievementId).set(updated.toJson());
     _storage.write('achievements_$userId', existing.map((e) => e.toJson()).toList());
+  }
+
+  @override
+  Future<ReflectionModel?> getReflection(String userId) async {
+    try {
+      final snapshot = await _reflectionDb.child(userId).get();
+      if (snapshot.exists) {
+        Map<String, dynamic> data;
+        try {
+          data = Map<String, dynamic>.from(snapshot.value as Map);
+        } catch (_) {
+          data = Map<String, dynamic>.from(jsonDecode(jsonEncode(snapshot.value)));
+        }
+        _storage.write('reflection_$userId', data);
+        return ReflectionModel.fromJson(data);
+      }
+    } catch (_) {}
+
+    final localData = _storage.read('reflection_$userId');
+    if (localData != null) {
+      try {
+        return ReflectionModel.fromJson(Map<String, dynamic>.from(localData));
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  @override
+  Future<void> saveReflection(String userId, ReflectionModel reflection) async {
+    await _reflectionDb.child(userId).set(reflection.toJson());
+    _storage.write('reflection_$userId', reflection.toJson());
   }
 }

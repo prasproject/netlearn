@@ -9,6 +9,7 @@ class ProgressModel {
   final int? finalScore;
   final DateTime? completedAt;
   final List<int> bookmarkedSlides;
+  final int? practiceScore;
 
   const ProgressModel({
     required this.unitId,
@@ -19,10 +20,14 @@ class ProgressModel {
     this.finalScore,
     this.completedAt,
     this.bookmarkedSlides = const [],
+    this.practiceScore,
   });
 
   /// Whether all materials in this unit are completed
   bool get isCompleted => materialsCompleted >= totalMaterials;
+
+  /// Apakah latihan quiz unit ini sudah dikerjakan.
+  bool get hasPracticeCompleted => practiceScore != null;
 
   /// Whether user has completed at least one checkpoint attempt for this unit.
   bool get hasCheckpointAttempt => checkpointScores.isNotEmpty;
@@ -42,21 +47,24 @@ class ProgressModel {
 
   ProgressModel copyWith({
     int? materialsCompleted,
+    int? totalMaterials,
     int? pretestScore,
     List<int>? checkpointScores,
     int? finalScore,
     DateTime? completedAt,
     List<int>? bookmarkedSlides,
+    int? practiceScore,
   }) {
     return ProgressModel(
       unitId: unitId,
       materialsCompleted: materialsCompleted ?? this.materialsCompleted,
-      totalMaterials: totalMaterials,
+      totalMaterials: totalMaterials ?? this.totalMaterials,
       pretestScore: pretestScore ?? this.pretestScore,
       checkpointScores: checkpointScores ?? this.checkpointScores,
       finalScore: finalScore ?? this.finalScore,
       completedAt: completedAt ?? this.completedAt,
       bookmarkedSlides: bookmarkedSlides ?? this.bookmarkedSlides,
+      practiceScore: practiceScore ?? this.practiceScore,
     );
   }
 
@@ -69,6 +77,7 @@ class ProgressModel {
         'finalScore': finalScore,
         'completedAt': completedAt?.toIso8601String(),
         'bookmarkedSlides': bookmarkedSlides,
+        'practiceScore': practiceScore,
       };
 
   static int _asInt(dynamic value, {int fallback = 0}) {
@@ -99,6 +108,7 @@ class ProgressModel {
             ? DateTime.parse(json['completedAt'] as String)
             : null,
         bookmarkedSlides: _asIntList(json['bookmarkedSlides']),
+        practiceScore: json['practiceScore'] == null ? null : _asInt(json['practiceScore']),
       );
 }
 

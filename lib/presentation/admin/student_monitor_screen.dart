@@ -2,10 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
+import '../../data/models/material_model.dart';
 import '../../data/models/progress_model.dart';
 import '../../data/models/user_model.dart';
 import '../../data/repositories/progress_repository.dart';
+import '../../data/seed/seed_data.dart';
 import '../../domain/providers/repository_providers.dart';
+import '../../domain/providers/material_provider.dart';
 
 class StudentMonitorScreen extends ConsumerStatefulWidget {
   const StudentMonitorScreen({super.key});
@@ -302,38 +305,68 @@ class _StudentMonitorScreenState extends ConsumerState<StudentMonitorScreen> {
               );
             }
             final data = snapshot.data!;
-            return Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(user.displayName, style: AppTextStyles.sectionTitle),
-                  const SizedBox(height: 4),
-                  Text('Username: ${user.id}', style: AppTextStyles.bodySmall),
-                  const SizedBox(height: 14),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
+            return DraggableScrollableSheet(
+              expand: false,
+              initialChildSize: 0.72,
+              minChildSize: 0.4,
+              maxChildSize: 0.92,
+              builder: (context, scrollController) {
+                return SingleChildScrollView(
+                  controller: scrollController,
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _achievementChip('Streak', '${user.streak}'),
-                      _achievementChip('Unit selesai', '${data.completedUnits}/${data.totalUnits}'),
-                      _achievementChip('Rata skor akhir', '${data.averageFinalScore}'),
-                      _achievementChip('Pre/Post', '${data.pretestScore}/${data.posttestScore}'),
+                      Center(
+                        child: Container(
+                          width: 40,
+                          height: 4,
+                          margin: const EdgeInsets.only(bottom: 12),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade300,
+                            borderRadius: BorderRadius.circular(99),
+                          ),
+                        ),
+                      ),
+                      Text(user.displayName, style: AppTextStyles.sectionTitle),
+                      const SizedBox(height: 4),
+                      Text('Username: ${user.id}', style: AppTextStyles.bodySmall),
+                      const SizedBox(height: 14),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _achievementChip('Streak', '${user.streak}'),
+                          _achievementChip('Unit selesai', '${data.completedUnits}/${data.totalUnits}'),
+                          _achievementChip('Rata skor akhir', '${data.averageFinalScore}'),
+                          _achievementChip('Pre/Post', '${data.pretestScore}/${data.posttestScore}'),
+                      if (data.averagePracticeScore > 0)
+                        _achievementChip('Rata latihan', '${data.averagePracticeScore}%'),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Text('Achievement Unlocked: ${data.unlockedAchievements}', style: AppTextStyles.heading),
+                      const SizedBox(height: 8),
+                      Text(
+                        data.unlockedAchievementNames.isEmpty
+                            ? 'Belum ada achievement yang terbuka.'
+                            : data.unlockedAchievementNames.join(', '),
+                        style: AppTextStyles.bodySmall,
+                      ),
+                      const SizedBox(height: 20),
+                      Text('Skor Latihan per Unit', style: AppTextStyles.heading),
+                      const SizedBox(height: 8),
+                      if (data.practiceScores.isEmpty)
+                        Text(
+                          'Belum ada unit materi yang diselesaikan.',
+                          style: AppTextStyles.bodySmall.copyWith(color: AppColors.textMuted),
+                        )
+                      else
+                        ...data.practiceScores.map(_practiceScoreCard),
                     ],
                   ),
-                  const SizedBox(height: 16),
-                  Text('Achievement Unlocked: ${data.unlockedAchievements}', style: AppTextStyles.heading),
-                  const SizedBox(height: 8),
-                  Text(
-                    data.unlockedAchievementNames.isEmpty
-                        ? 'Belum ada achievement yang terbuka.'
-                        : data.unlockedAchievementNames.join(', '),
-                    style: AppTextStyles.bodySmall,
-                  ),
-                  const SizedBox(height: 12),
-                ],
-              ),
+                );
+              },
             );
           },
         );
@@ -360,6 +393,15 @@ class _StudentMonitorScreenState extends ConsumerState<StudentMonitorScreen> {
         ? 0
         : (finishedScores.reduce((a, b) => a + b) / finishedScores.length).round();
     final unlocked = achievements.where((a) => a.isUnlocked).toList();
+    final practiceScoreEntries = _buildPracticeScoreEntries(
+      unitProgress,
+      ref.read(materialProvider).materials,
+    );
+
+    final practiceScores = unitProgress.map((p) => p.practiceScore).whereType<int>().toList();
+    final averagePracticeScore = practiceScores.isEmpty
+        ? 0
+        : (practiceScores.reduce((a, b) => a + b) / practiceScores.length).round();
 
     return _UserAchievementData(
       completedUnits: completedUnits,
@@ -369,6 +411,94 @@ class _StudentMonitorScreenState extends ConsumerState<StudentMonitorScreen> {
       posttestScore: overall?.finalScore ?? 0,
       unlockedAchievements: unlocked.length,
       unlockedAchievementNames: unlocked.map((e) => e.name).toList(),
+      practiceScores: practiceScoreEntries,
+      averagePracticeScore: averagePracticeScore,
+    );
+  }
+
+  List<_PracticeScoreEntry> _buildPracticeScoreEntries(
+    List<ProgressModel> unitProgress,
+    List<MaterialModel> materials,
+  ) {
+    String titleFor(String unitId) {
+      for (final m in materials) {
+        if (m.id == unitId) return m.title;
+      }
+      for (final m in SeedData.materials) {
+        if (m.id == unitId) return m.title;
+      }
+      return unitId;
+    }
+
+    int orderFor(String unitId) {
+      for (final m in materials) {
+        if (m.id == unitId) return m.order;
+      }
+      for (final m in SeedData.materials) {
+        if (m.id == unitId) return m.order;
+      }
+      return 0;
+    }
+
+    final completed = unitProgress.where((p) => p.isCompleted).toList()
+      ..sort((a, b) => orderFor(a.unitId).compareTo(orderFor(b.unitId)));
+
+    return completed
+        .map(
+          (p) => _PracticeScoreEntry(
+            unitTitle: titleFor(p.unitId),
+            practiceScore: p.practiceScore,
+          ),
+        )
+        .toList();
+  }
+
+  Widget _practiceScoreCard(_PracticeScoreEntry entry) {
+    final hasScore = entry.practiceScore != null;
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.background,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: hasScore
+              ? AppColors.progressTeal.withValues(alpha: 0.25)
+              : AppColors.divider,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                hasScore ? Icons.checklist_rounded : Icons.pending_outlined,
+                size: 16,
+                color: hasScore ? AppColors.progressTeal : AppColors.textMuted,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  entry.unitTitle,
+                  style: AppTextStyles.bodySmall.copyWith(fontWeight: FontWeight.w700),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            hasScore ? 'Skor latihan: ${entry.practiceScore}%' : 'Belum mengerjakan latihan.',
+            style: AppTextStyles.paragraph.copyWith(
+              fontSize: 14,
+              height: 1.5,
+              color: hasScore ? AppColors.textPrimary : AppColors.textMuted,
+              fontStyle: hasScore ? FontStyle.normal : FontStyle.italic,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -555,6 +685,8 @@ class _UserAchievementData {
   final int posttestScore;
   final int unlockedAchievements;
   final List<String> unlockedAchievementNames;
+  final List<_PracticeScoreEntry> practiceScores;
+  final int averagePracticeScore;
 
   const _UserAchievementData({
     required this.completedUnits,
@@ -564,6 +696,18 @@ class _UserAchievementData {
     required this.posttestScore,
     required this.unlockedAchievements,
     required this.unlockedAchievementNames,
+    required this.practiceScores,
+    required this.averagePracticeScore,
+  });
+}
+
+class _PracticeScoreEntry {
+  final String unitTitle;
+  final int? practiceScore;
+
+  const _PracticeScoreEntry({
+    required this.unitTitle,
+    this.practiceScore,
   });
 }
 

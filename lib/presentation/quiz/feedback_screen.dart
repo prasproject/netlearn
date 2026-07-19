@@ -7,6 +7,8 @@ import '../../core/constants/app_strings.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../core/widgets/gradient_button.dart';
 import '../../domain/providers/audio_provider.dart';
+import '../../domain/providers/auth_provider.dart';
+import '../../domain/services/ngain_calculator.dart';
 import 'package:lottie/lottie.dart';
 
 /// Feedback Screen — Animated score result with XP, badge, and win/lose audio.
@@ -31,11 +33,20 @@ class FeedbackScreen extends ConsumerStatefulWidget {
 }
 
 class _FeedbackScreenState extends ConsumerState<FeedbackScreen> {
+  bool _xpAwarded = false;
+  late final int _actualXpEarned =
+      XPService.calculateQuizXP(widget.score, widget.xpEarned);
+
   @override
   void initState() {
     super.initState();
     // Play win/lose sound based on score
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_xpAwarded && _actualXpEarned > 0) {
+        _xpAwarded = true;
+        ref.read(authProvider.notifier).addXP(_actualXpEarned);
+      }
+
       final audio = ref.read(audioProvider.notifier);
       if (widget.score >= 90) {
         audio.playSfx(SoundEffect.excellent);
@@ -130,7 +141,7 @@ class _FeedbackScreenState extends ConsumerState<FeedbackScreen> {
                   children: [
                     const Icon(Icons.star_rounded, size: 18, color: AppColors.secondaryGreen),
                     const SizedBox(width: 6),
-                    Text('+${widget.xpEarned} XP didapat!', style: AppTextStyles.pillText.copyWith(color: AppColors.secondaryGreen)),
+                    Text('+$_actualXpEarned XP didapat!', style: AppTextStyles.pillText.copyWith(color: AppColors.secondaryGreen)),
                   ],
                 ),
               ).animate().slideY(begin: 0.2, delay: 700.ms).fadeIn(),
@@ -170,7 +181,11 @@ class _FeedbackScreenState extends ConsumerState<FeedbackScreen> {
                 width: double.infinity,
                 onPressed: () {
                   ref.read(audioProvider.notifier).playSfx(SoundEffect.buttonTap);
-                  context.go('/home');
+                  if (widget.quizType == 'Post-Test') {
+                    context.go('/reflection');
+                  } else {
+                    context.go('/home');
+                  }
                 },
               ).animate().fadeIn(delay: 1000.ms),
             ],

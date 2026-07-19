@@ -12,6 +12,7 @@ import '../../domain/providers/auth_provider.dart';
 import '../../domain/providers/progress_provider.dart';
 import '../../domain/providers/material_provider.dart';
 import '../../domain/providers/tutorial_provider.dart';
+import '../../domain/services/learning_progress_helper.dart';
 
 /// Home Dashboard Screen
 class HomeScreen extends ConsumerWidget {
@@ -22,7 +23,7 @@ class HomeScreen extends ConsumerWidget {
     final auth = ref.watch(authProvider);
     final progress = ref.watch(progressProvider);
     final user = auth.user;
-    final hasPretestScore = progress.overallPretestScore > 0;
+    final hasPretestScore = progress.hasCompletedPretest;
 
     if (user == null) {
       return const Scaffold(
@@ -40,6 +41,7 @@ class HomeScreen extends ConsumerWidget {
             ref,
             user.displayName.split(' ').first,
             user.initials,
+            user.xp,
             user.streak,
             progress.overallProgress,
           ),
@@ -84,6 +86,7 @@ class HomeScreen extends ConsumerWidget {
     WidgetRef ref,
     String name,
     String initials,
+    int xp,
     int streak,
     double progress,
   ) {
@@ -159,8 +162,14 @@ class HomeScreen extends ConsumerWidget {
                     ],
                   ),
                   const SizedBox(height: 12),
-                  // Streak pill
-                  Row(children: [StreakPill(days: streak)]),
+                  // XP & streak pills
+                  Row(
+                    children: [
+                      XpPill(xp: xp),
+                      const SizedBox(width: 8),
+                      StreakPill(days: streak),
+                    ],
+                  ),
                   const SizedBox(height: 12),
                   // Progress bar
                   Container(
@@ -195,55 +204,16 @@ class HomeScreen extends ConsumerWidget {
   Widget _buildContinueCard(BuildContext context, WidgetRef ref, bool hasPretestScore) {
     final matState = ref.watch(materialProvider);
     final progress = ref.watch(progressProvider);
-    
-    String targetUnitId = 'unit-1';
-    String title = 'Unit 1';
-    String subtitle = 'Mulai belajar';
-    
-    if (matState.materials.isNotEmpty) {
-      final units = List.of(matState.materials)
-        ..sort((a, b) {
-          final o = a.order.compareTo(b.order);
-          if (o != 0) return o;
-          return a.unitNumber.compareTo(b.unitNumber);
-        });
 
-      bool isUnlockedIndex(int i) {
-        if (i <= 0) return true;
-        final prev = units[i - 1];
-        final prevP = progress.unitProgress.where((p) => p.unitId == prev.id).cast<ProgressModel?>().firstWhere(
-              (p) => p != null,
-              orElse: () => null,
-            ) ??
-            ProgressModel(unitId: prev.id, totalMaterials: prev.totalSlides);
-        // Lanjut ke unit berikutnya cukup dengan menyelesaikan materi unit sebelumnya.
-        // Checkpoint tidak lagi mengunci akses materi.
-        return prevP.isCompleted;
-      }
+    final target = LearningProgressHelper.resolveContinueTarget(
+      materials: matState.materials,
+      progress: progress.unitProgress,
+    );
 
-      final activeIdx = units.indexWhere((u) => u.id == (matState.activeUnitId ?? ''));
-      var firstUnlockedIdx = 0;
-      for (var i = 0; i < units.length; i++) {
-        if (isUnlockedIndex(i)) {
-          firstUnlockedIdx = i;
-          break;
-        }
-      }
-
-      final idx = (activeIdx >= 0 && isUnlockedIndex(activeIdx)) ? activeIdx : firstUnlockedIdx;
-
-      final resolvedIdx = idx >= 0 ? idx : 0;
-      targetUnitId = units[resolvedIdx].id;
-      final targetUnit = units[resolvedIdx];
-      title = 'Unit ${targetUnit.unitNumber} — ${targetUnit.title}';
-      
-      try {
-        final p = progress.unitProgress.firstWhere((p) => p.unitId == targetUnitId);
-        subtitle = '${p.materialsCompleted}/${p.totalMaterials} Materi Selesai';
-      } catch (_) {
-        subtitle = '0/${targetUnit.totalSlides} Materi Selesai';
-      }
-    }
+    final targetUnitId = target?.unitId ?? 'unit-1';
+    final title = target?.title ?? 'Unit 1';
+    final subtitle = target?.subtitle ?? 'Mulai belajar';
+    final resumeSlide = target?.slideIndex ?? 0;
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -278,7 +248,10 @@ class HomeScreen extends ConsumerWidget {
                 context.push('/pretest');
                 return;
               }
-              ref.read(materialProvider.notifier).setActiveUnit(targetUnitId);
+              ref.read(materialProvider.notifier).setActiveUnit(
+                    targetUnitId,
+                    slideIndex: resumeSlide,
+                  );
               context.push('/material/$targetUnitId');
             },
             child: Container(
@@ -311,6 +284,13 @@ class HomeScreen extends ConsumerWidget {
       childAspectRatio: 0.95,
       children: [
         _menuCard(
+          'Kompetensi Pembelajaran',
+          'Kompetensi & tujuan belajar',
+          AppColors.progressTeal,
+          Icons.flag_rounded,
+          onTap: () => context.push('/capaian'),
+        ),
+        _menuCard(
           'Materi',
           '5 unit tersedia',
           AppColors.primaryBlue,
@@ -336,6 +316,14 @@ class HomeScreen extends ConsumerWidget {
           Icons.star_rounded,
           enabled: hasPretestScore,
           onTap: () => context.push('/progress'),
+        ),
+        _menuCard(
+          'Refleksi',
+          'Refleksikan pemahamanmu',
+          AppColors.quizPink,
+          Icons.self_improvement_rounded,
+          enabled: hasPretestScore,
+          onTap: () => context.push('/reflection'),
         ),
       ],
     );
@@ -451,7 +439,7 @@ class HomeScreen extends ConsumerWidget {
 
   Widget _buildBadgeCarousel(List<AchievementModel> badges) {
     return SizedBox(
-      height: 80,
+      height: 86,
       child: ListView.separated(
         scrollDirection: Axis.horizontal, itemCount: badges.length,
         separatorBuilder: (_, __) => const SizedBox(width: 12),

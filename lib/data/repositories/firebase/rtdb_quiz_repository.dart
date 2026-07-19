@@ -10,6 +10,21 @@ class RtdbQuizRepository implements QuizRepository {
   final DatabaseReference _db = FirebaseDatabase.instance.ref('quizzes');
   final _storage = GetStorage();
 
+  List<QuizModel> _mergeWithSeed(List<QuizModel> remote) {
+    String mergeKey(QuizModel q) {
+      if (q.type == QuizType.practice && q.unitId != null) {
+        return 'practice:${q.unitId}';
+      }
+      return q.id;
+    }
+
+    final byKey = <String, QuizModel>{for (final q in SeedData.quizzes) mergeKey(q): q};
+    for (final q in remote) {
+      byKey[mergeKey(q)] = q;
+    }
+    return byKey.values.toList();
+  }
+
   @override
   Future<QuizModel?> getQuizById(String id) async {
     final all = await getAllQuizzes();
@@ -36,9 +51,10 @@ class RtdbQuizRepository implements QuizRepository {
           map['id'] = e.key;
           return QuizModel.fromJson(map);
         }).toList();
-        
-        _storage.write('quizzes', list.map((e) => e.toJson()).toList());
-        return list;
+
+        final merged = _mergeWithSeed(list);
+        _storage.write('quizzes', merged.map((e) => e.toJson()).toList());
+        return merged;
       }
     } catch (e) {
       // Fallback
@@ -48,11 +64,12 @@ class RtdbQuizRepository implements QuizRepository {
     final localData = _storage.read('quizzes');
     if (localData != null) {
       try {
-        return (localData as List).map((e) => QuizModel.fromJson(Map<String, dynamic>.from(e))).toList();
+        final cached = (localData as List).map((e) => QuizModel.fromJson(Map<String, dynamic>.from(e))).toList();
+        return _mergeWithSeed(cached);
       } catch (_) {}
     }
 
-    return SeedData.quizzes;
+    return _mergeWithSeed(SeedData.quizzes);
   }
   
   @override

@@ -22,26 +22,42 @@ class _ManageMaterialsScreenState extends ConsumerState<ManageMaterialsScreen>
   late final TabController _tabController;
   final _uuid = const Uuid();
   List<QuizModel> _quizzes = [];
+  List<QuizModel> _practiceQuizzes = [];
   bool _isLoadingQuizzes = true;
   static const int _kDefaultPrePostQuestionCount = 10;
+  static const int _kPracticeQuestionCount = 5;
   final _quizTitleC = TextEditingController(text: 'Pre/Post Test');
   final _quizTimeLimitC = TextEditingController(text: '900');
+  final _practiceTimeLimitC = TextEditingController(text: '600');
   bool _quizBankInitialized = false;
+  bool _practiceBankInitialized = false;
+  String? _selectedPracticeUnitId;
   List<TextEditingController> _qQuestionC = [];
   List<List<TextEditingController>> _qOptionC = [];
   List<TextEditingController> _qImageBase64C = [];
   List<TextEditingController> _qExplanationC = [];
   List<TextEditingController> _qTopicC = [];
   List<int> _qCorrectIndex = [];
+  List<TextEditingController> _pQuestionC = [];
+  List<List<TextEditingController>> _pOptionC = [];
+  List<TextEditingController> _pImageBase64C = [];
+  List<TextEditingController> _pExplanationC = [];
+  List<TextEditingController> _pTopicC = [];
+  List<int> _pCorrectIndex = [];
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(() {
       if (!mounted) return;
-      // Rebuild so FAB label/action updates immediately on tab change.
       setState(() {});
+      if (_tabController.index == 2 && !_practiceBankInitialized) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          _ensurePracticeUnitSelected(ref.read(materialProvider).materials);
+        });
+      }
     });
     _loadQuizzes();
   }
@@ -53,19 +69,31 @@ class _ManageMaterialsScreenState extends ConsumerState<ManageMaterialsScreen>
     final filtered = quizzes
         .where((q) => q.type == QuizType.pretest || q.type == QuizType.posttest)
         .toList();
+    final practice = quizzes.where((q) => q.type == QuizType.practice).toList()
+      ..sort((a, b) => (a.unitId ?? '').compareTo(b.unitId ?? ''));
     filtered.sort((a, b) => a.title.compareTo(b.title));
     if (!mounted) return;
     setState(() {
       _quizzes = filtered;
+      _practiceQuizzes = practice;
       _isLoadingQuizzes = false;
     });
     _initPrePostBankFromExisting();
+    _ensurePracticeUnitSelected(ref.read(materialProvider).materials);
   }
 
   @override
   void dispose() {
     _quizTitleC.dispose();
     _quizTimeLimitC.dispose();
+    _practiceTimeLimitC.dispose();
+    _disposePrePostControllers();
+    _disposePracticeControllers();
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  void _disposePrePostControllers() {
     for (final c in _qQuestionC) {
       c.dispose();
     }
@@ -83,8 +111,39 @@ class _ManageMaterialsScreenState extends ConsumerState<ManageMaterialsScreen>
     for (final c in _qTopicC) {
       c.dispose();
     }
-    _tabController.dispose();
-    super.dispose();
+    _qQuestionC = [];
+    _qOptionC = [];
+    _qImageBase64C = [];
+    _qExplanationC = [];
+    _qTopicC = [];
+    _qCorrectIndex = [];
+  }
+
+  void _disposePracticeControllers() {
+    for (final c in _pQuestionC) {
+      c.dispose();
+    }
+    for (final row in _pOptionC) {
+      for (final c in row) {
+        c.dispose();
+      }
+    }
+    for (final c in _pImageBase64C) {
+      c.dispose();
+    }
+    for (final c in _pExplanationC) {
+      c.dispose();
+    }
+    for (final c in _pTopicC) {
+      c.dispose();
+    }
+    _pQuestionC = [];
+    _pOptionC = [];
+    _pImageBase64C = [];
+    _pExplanationC = [];
+    _pTopicC = [];
+    _pCorrectIndex = [];
+    _practiceBankInitialized = false;
   }
 
   @override
@@ -94,16 +153,18 @@ class _ManageMaterialsScreenState extends ConsumerState<ManageMaterialsScreen>
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: Text('Kelola Materi & Pre/Post Test', style: AppTextStyles.screenTitle),
+        title: Text('Kelola Materi & Quiz', style: AppTextStyles.screenTitle),
         backgroundColor: AppColors.primaryBlue,
         foregroundColor: Colors.white,
         bottom: TabBar(
           controller: _tabController,
           labelColor: Colors.white,
           indicatorColor: Colors.white,
+          isScrollable: true,
           tabs: const [
             Tab(text: 'Materi'),
             Tab(text: 'Pre/Post Test'),
+            Tab(text: 'Latihan Quiz'),
           ],
         ),
       ),
@@ -112,6 +173,7 @@ class _ManageMaterialsScreenState extends ConsumerState<ManageMaterialsScreen>
         children: [
           _buildMaterialTab(materialsState.materials),
           _buildQuizTab(),
+          _buildPracticeTab(materialsState.materials),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
@@ -120,12 +182,20 @@ class _ManageMaterialsScreenState extends ConsumerState<ManageMaterialsScreen>
             await _openMaterialDialog();
             return;
           }
-          _jumpToFirstEmptyQuestion();
+          if (_tabController.index == 1) {
+            _jumpToFirstEmptyPrePostQuestion();
+            return;
+          }
+          _jumpToFirstEmptyPracticeQuestion();
         },
         backgroundColor: AppColors.primaryBlue,
         icon: const Icon(Icons.add, color: Colors.white),
         label: Text(
-          _tabController.index == 0 ? 'Tambah Materi' : 'Tambah Soal',
+          _tabController.index == 0
+              ? 'Tambah Materi'
+              : _tabController.index == 1
+                  ? 'Tambah Soal'
+                  : 'Isi Soal Kosong',
           style: const TextStyle(color: Colors.white),
         ),
       ),
@@ -176,7 +246,7 @@ class _ManageMaterialsScreenState extends ConsumerState<ManageMaterialsScreen>
     if (mounted) setState(() {});
   }
 
-  void _jumpToFirstEmptyQuestion() {
+  void _jumpToFirstEmptyPrePostQuestion() {
     _initPrePostBankFromExisting();
     final idx = _qQuestionC.indexWhere((c) => c.text.trim().isEmpty);
     if (idx == -1) {
@@ -332,6 +402,304 @@ class _ManageMaterialsScreenState extends ConsumerState<ManageMaterialsScreen>
         ],
       ),
     );
+  }
+
+  void _ensurePracticeUnitSelected(List<MaterialModel> materials) {
+    if (materials.isEmpty) return;
+    final sorted = List<MaterialModel>.from(materials)
+      ..sort((a, b) {
+        final o = a.order.compareTo(b.order);
+        if (o != 0) return o;
+        return a.unitNumber.compareTo(b.unitNumber);
+      });
+    final currentExists = sorted.any((m) => m.id == _selectedPracticeUnitId);
+    if (!currentExists) {
+      _selectedPracticeUnitId = sorted.first.id;
+      _initPracticeBankForUnit(_selectedPracticeUnitId!);
+    }
+  }
+
+  void _initPracticeBankForUnit(String unitId) {
+    _disposePracticeControllers();
+
+    final existing = _practiceQuizzes.cast<QuizModel?>().firstWhere(
+          (q) => q?.unitId == unitId,
+          orElse: () => null,
+        );
+
+    _practiceTimeLimitC.text = '${existing?.timeLimitSeconds ?? 600}';
+    final questions = existing?.questions ?? const <QuizQuestion>[];
+
+    _pQuestionC = List.generate(
+      _kPracticeQuestionCount,
+      (i) => TextEditingController(text: questions.elementAtOrNull(i)?.question ?? ''),
+    );
+    _pOptionC = List.generate(_kPracticeQuestionCount, (i) {
+      final opts = questions.elementAtOrNull(i)?.options ?? const <String>[];
+      return List.generate(
+        4,
+        (j) => TextEditingController(text: opts.elementAtOrNull(j) ?? ''),
+      );
+    });
+    _pImageBase64C = List.generate(
+      _kPracticeQuestionCount,
+      (i) => TextEditingController(text: questions.elementAtOrNull(i)?.imageBase64 ?? ''),
+    );
+    _pExplanationC = List.generate(
+      _kPracticeQuestionCount,
+      (i) => TextEditingController(text: questions.elementAtOrNull(i)?.explanation ?? ''),
+    );
+    _pTopicC = List.generate(
+      _kPracticeQuestionCount,
+      (i) => TextEditingController(text: questions.elementAtOrNull(i)?.topic ?? ''),
+    );
+    _pCorrectIndex = List.generate(
+      _kPracticeQuestionCount,
+      (i) => (questions.elementAtOrNull(i)?.correctIndex ?? 0).clamp(0, 3),
+    );
+
+    _practiceBankInitialized = true;
+    if (mounted) setState(() {});
+  }
+
+  void _jumpToFirstEmptyPracticeQuestion() {
+    if (_selectedPracticeUnitId == null) {
+      _showSnack('Belum ada unit materi.');
+      return;
+    }
+    if (!_practiceBankInitialized) {
+      _initPracticeBankForUnit(_selectedPracticeUnitId!);
+    }
+    final idx = _pQuestionC.indexWhere((c) => c.text.trim().isEmpty);
+    if (idx == -1) {
+      _showSnack('Semua 5 soal latihan unit ini sudah ada. Edit lalu tekan Simpan.');
+      return;
+    }
+    _showSnack('Silakan isi Soal Latihan ${idx + 1}.');
+  }
+
+  Widget _buildPracticeTab(List<MaterialModel> materials) {
+    if (_isLoadingQuizzes) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (materials.isEmpty) {
+      return const Center(child: Text('Tambahkan materi terlebih dahulu.'));
+    }
+
+    if (_selectedPracticeUnitId == null || !_practiceBankInitialized) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    final sorted = List<MaterialModel>.from(materials)
+      ..sort((a, b) {
+        final o = a.order.compareTo(b.order);
+        if (o != 0) return o;
+        return a.unitNumber.compareTo(b.unitNumber);
+      });
+    final selectedMaterial = sorted.firstWhere((m) => m.id == _selectedPracticeUnitId);
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Latihan Quiz per Unit (5 soal)', style: AppTextStyles.heading),
+          const SizedBox(height: 8),
+          Text(
+            'Soal latihan muncul setelah siswa menyelesaikan materi unit, sebelum refleksi.',
+            style: AppTextStyles.bodySmall,
+          ),
+          const SizedBox(height: 16),
+          DropdownButtonFormField<String>(
+            value: _selectedPracticeUnitId,
+            decoration: const InputDecoration(
+              labelText: 'Pilih Unit',
+              border: OutlineInputBorder(),
+            ),
+            items: [
+              for (final m in sorted)
+                DropdownMenuItem(
+                  value: m.id,
+                  child: Text('Unit ${m.unitNumber}: ${m.title}'),
+                ),
+            ],
+            onChanged: (value) {
+              if (value == null) return;
+              setState(() => _selectedPracticeUnitId = value);
+              _initPracticeBankForUnit(value);
+            },
+          ),
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.secondaryGreenSurface,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                Text(selectedMaterial.iconEmoji ?? '📝', style: const TextStyle(fontSize: 22)),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    selectedMaterial.title,
+                    style: AppTextStyles.bodySmall.copyWith(fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _practiceTimeLimitC,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(labelText: 'Batas Waktu (detik)'),
+          ),
+          const SizedBox(height: 12),
+          const Divider(height: 24),
+          const SizedBox(height: 8),
+          for (int i = 0; i < _kPracticeQuestionCount; i++) ...[
+            Card(
+              margin: const EdgeInsets.only(bottom: 12),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Soal Latihan ${i + 1}', style: AppTextStyles.heading),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _pQuestionC[i],
+                      decoration: const InputDecoration(labelText: 'Pertanyaan'),
+                      maxLines: 2,
+                    ),
+                    const SizedBox(height: 12),
+                    for (int opt = 0; opt < 4; opt++) ...[
+                      TextField(
+                        controller: _pOptionC[i][opt],
+                        decoration: InputDecoration(labelText: 'Opsi ${opt + 1}'),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    DropdownButtonFormField<int>(
+                      value: _pCorrectIndex[i],
+                      decoration: const InputDecoration(labelText: 'Jawaban Benar'),
+                      items: const [
+                        DropdownMenuItem(value: 0, child: Text('Opsi 1')),
+                        DropdownMenuItem(value: 1, child: Text('Opsi 2')),
+                        DropdownMenuItem(value: 2, child: Text('Opsi 3')),
+                        DropdownMenuItem(value: 3, child: Text('Opsi 4')),
+                      ],
+                      onChanged: (value) {
+                        if (value == null) return;
+                        setState(() => _pCorrectIndex[i] = value);
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _pTopicC[i],
+                      decoration: const InputDecoration(labelText: 'Topik (opsional)'),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _pExplanationC[i],
+                      decoration: const InputDecoration(labelText: 'Penjelasan (opsional)'),
+                      maxLines: 2,
+                    ),
+                    const SizedBox(height: 16),
+                    _Base64ImagePicker(
+                      label: 'Gambar Soal (opsional)',
+                      controller: _pImageBase64C[i],
+                    ),
+                    const SizedBox(height: 12),
+                    _Base64Preview(controller: _pImageBase64C[i]),
+                  ],
+                ),
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: _savePracticeBank,
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.secondaryGreen),
+              icon: const Icon(Icons.save),
+              label: Text('Simpan Latihan Unit ${selectedMaterial.unitNumber}'),
+            ),
+          ),
+          const SizedBox(height: 80),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _savePracticeBank() async {
+    final unitId = _selectedPracticeUnitId;
+    if (unitId == null) {
+      _showSnack('Pilih unit terlebih dahulu.');
+      return;
+    }
+
+    final materials = ref.read(materialProvider).materials;
+    final material = materials.cast<MaterialModel?>().firstWhere(
+          (m) => m?.id == unitId,
+          orElse: () => null,
+        );
+    if (material == null) {
+      _showSnack('Unit materi tidak ditemukan.');
+      return;
+    }
+
+    final timeLimit = int.tryParse(_practiceTimeLimitC.text.trim()) ?? 600;
+    final builtQuestions = List.generate(_kPracticeQuestionCount, (i) {
+      return QuizQuestion(
+        question: _pQuestionC[i].text.trim(),
+        options: List.generate(4, (j) => _pOptionC[i][j].text.trim()),
+        correctIndex: _pCorrectIndex[i],
+        imageBase64: _pImageBase64C[i].text.trim().isEmpty ? null : _pImageBase64C[i].text.trim(),
+        explanation: _pExplanationC[i].text.trim().isEmpty ? null : _pExplanationC[i].text.trim(),
+        topic: _pTopicC[i].text.trim().isEmpty ? null : _pTopicC[i].text.trim(),
+      );
+    });
+
+    final hasInvalid = builtQuestions.any((q) {
+      if (q.question.trim().isEmpty) return true;
+      if (q.options.length != 4) return true;
+      if (q.options.any((o) => o.trim().isEmpty)) return true;
+      if (q.correctIndex < 0 || q.correctIndex > 3) return true;
+      return false;
+    });
+    if (hasInvalid) {
+      _showSnack('Mohon lengkapi pertanyaan + 4 opsi untuk semua 5 soal latihan.');
+      return;
+    }
+
+    final existing = _practiceQuizzes.cast<QuizModel?>().firstWhere(
+          (q) => q?.unitId == unitId,
+          orElse: () => null,
+        );
+
+    final practice = QuizModel(
+      id: existing?.id ?? 'practice-$unitId',
+      type: QuizType.practice,
+      unitId: unitId,
+      title: existing?.title ?? 'Latihan Unit ${material.unitNumber}',
+      timeLimitSeconds: timeLimit,
+      xpReward: existing?.xpReward ?? 10,
+      questions: builtQuestions,
+    );
+
+    if (existing == null) {
+      await ref.read(quizProvider.notifier).createQuiz(practice);
+    } else {
+      await ref.read(quizProvider.notifier).updateQuiz(practice);
+    }
+
+    _showSnack('Latihan Unit ${material.unitNumber} berhasil disimpan (5 soal).');
+    await _loadQuizzes();
+    _initPracticeBankForUnit(unitId);
   }
 
   Future<void> _savePrePostBank() async {

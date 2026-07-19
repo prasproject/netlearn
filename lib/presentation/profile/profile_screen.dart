@@ -94,6 +94,10 @@ class ProfileScreen extends ConsumerWidget {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
+                        _chip('⭐ ${user.xp} XP', AppColors.secondaryGreenAccent),
+                        const SizedBox(width: 8),
+                        _chip('Lv ${user.level}', AppColors.gold),
+                        const SizedBox(width: 8),
                         _chip('🔥 ${user.streak} Hari', AppColors.accentOrangeWarm),
                       ],
                     ),

@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:intl/intl.dart';
@@ -29,6 +30,8 @@ class CertificateGenerator {
     required int posttestScore,
   }) async {
     await initializeDateFormatting('id_ID', null);
+    final logoBytes = await rootBundle.load('assets/images/logo.png');
+    final logoImage = pw.MemoryImage(logoBytes.buffer.asUint8List());
     final pdf = pw.Document();
     final dateStr = DateFormat('d MMMM yyyy', 'id_ID').format(DateTime.now());
     final nGainCategory = _getNGainCategory(nGain);
@@ -64,7 +67,7 @@ class CertificateGenerator {
                   child: pw.Column(
                     mainAxisAlignment: pw.MainAxisAlignment.center,
                     children: [
-                      _buildHeader(),
+                      _buildHeader(logoImage),
                       pw.SizedBox(height: 8),
                       _divider(),
                       pw.SizedBox(height: 16),
@@ -102,19 +105,13 @@ class CertificateGenerator {
     return path ?? fileName;
   }
 
-  static pw.Widget _buildHeader() {
+  static pw.Widget _buildHeader(pw.MemoryImage logo) {
     return pw.Row(
       mainAxisAlignment: pw.MainAxisAlignment.center,
       children: [
-        pw.Container(
-          width: 36, height: 36,
-          decoration: pw.BoxDecoration(
-            shape: pw.BoxShape.circle,
-            border: pw.Border.all(color: _gold, width: 2),
-          ),
-          child: pw.Center(
-            child: pw.Text('★', style: pw.TextStyle(fontSize: 18, color: _gold, fontWeight: pw.FontWeight.bold)),
-          ),
+        pw.SizedBox(
+          width: 40, height: 40,
+          child: pw.Image(logo),
         ),
         pw.SizedBox(width: 12),
         pw.Column(
@@ -138,7 +135,7 @@ class CertificateGenerator {
         pw.SizedBox(width: 16),
         _statBox('N-Gain', '${nGain.toStringAsFixed(2)} ($category)'),
         pw.SizedBox(width: 16),
-        _statBox('Pre → Post', '$pre → $post'),
+        _statBox('Pre -> Post', '$pre -> $post'),
         pw.SizedBox(width: 16),
         _statBox('Total XP', '$xp XP'),
       ],
