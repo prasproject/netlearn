@@ -37,7 +37,13 @@ class _PracticeQuizScreenState extends ConsumerState<PracticeQuizScreen> {
   @override
   void initState() {
     super.initState();
+    // Clear any leftover state (e.g. isFinished:true) from a previous
+    // Checkpoint/Quiz session on the shared quizProvider — otherwise the
+    // first build() below sees the stale "finished" state and immediately
+    // ends this practice session with 0 answers before startQuizByType's
+    // result arrives.
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(quizProvider.notifier).resetQuiz();
       ref.read(quizProvider.notifier).startQuizByType(
             QuizType.practice,
             unitId: widget.unitId,
@@ -84,9 +90,9 @@ class _PracticeQuizScreenState extends ConsumerState<PracticeQuizScreen> {
       ),
     );
 
+    if (!mounted) return;
     ref.read(quizProvider.notifier).resetQuiz();
 
-    if (!mounted) return;
     context.pop();
     if (widget.popMaterialDetail && mounted) {
       context.pop();

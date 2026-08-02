@@ -341,14 +341,15 @@ class ProgressNotifier extends StateNotifier<ProgressState> {
   }
 
   /// Buka semua kunci menu (Pre-Test, Materi, Simulasi, Progress, Post-Test, semua unit).
-  Future<void> unlockAllMenus() async {
+  Future<void> unlockAllMenus([List<MaterialModel>? materials]) async {
     if (_userId.trim().isEmpty) return;
 
     await _repo.saveQuizScore(_userId, _overallUnitId, pretestScore: 100);
     await _repo.saveQuizScore(_userId, _overallUnitId, finalScore: 100);
 
     final now = DateTime.now();
-    for (final m in SeedData.materials) {
+    final units = (materials != null && materials.isNotEmpty) ? materials : SeedData.materials;
+    for (final m in units) {
       await _repo.saveProgress(
         _userId,
         ProgressModel(
@@ -397,6 +398,6 @@ class ProgressNotifier extends StateNotifier<ProgressState> {
 
 final progressProvider =
     StateNotifierProvider<ProgressNotifier, ProgressState>((ref) {
-  final userId = ref.watch(authProvider).user?.id ?? '';
+  final userId = ref.watch(authProvider.select((s) => s.user?.id)) ?? '';
   return ProgressNotifier(ref.watch(progressRepositoryProvider), userId);
 });

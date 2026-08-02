@@ -225,7 +225,8 @@ class ProfileScreen extends ConsumerWidget {
     );
 
     try {
-      await ref.read(progressProvider.notifier).unlockAllMenus();
+      final liveMaterials = ref.read(materialProvider).materials;
+      await ref.read(progressProvider.notifier).unlockAllMenus(liveMaterials);
 
       if (!context.mounted) return;
       Navigator.of(context, rootNavigator: true).pop();

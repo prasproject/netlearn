@@ -24,7 +24,11 @@ class _PretestScreenState extends ConsumerState<PretestScreen> {
   @override
   void initState() {
     super.initState();
+    // Clear leftover state from a previous quiz session on the shared
+    // quizProvider so a stale isFinished:true isn't read before this
+    // screen's own quiz has loaded.
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(quizProvider.notifier).resetQuiz();
       ref.read(quizProvider.notifier).startQuizByType(QuizType.pretest);
       ref.read(audioProvider.notifier).playSfx(SoundEffect.quizStart);
     });
