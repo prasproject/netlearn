@@ -5,7 +5,7 @@ import '../../seed/seed_data.dart';
 import '../progress_repository.dart';
 
 /// Firebase Firestore implementation of ProgressRepository.
-class FirestoreProgressRepository implements ProgressRepository {
+class FirestoreProgressRepository extends ProgressRepository {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   @override

@@ -49,7 +49,9 @@ class _ReflectionScreenState extends ConsumerState<ReflectionScreen> {
   Future<void> _submit() async {
     if (!_isValid || _submitting) return;
     setState(() => _submitting = true);
-    await ref.read(progressProvider.notifier).saveReflection(
+    await ref
+        .read(progressProvider.notifier)
+        .saveReflection(
           ReflectionModel(
             understandingLevel: _selectedLevel!,
             mostUnderstoodTopic: _mostUnderstoodController.text.trim(),
@@ -59,9 +61,9 @@ class _ReflectionScreenState extends ConsumerState<ReflectionScreen> {
         );
     if (!mounted) return;
     setState(() => _submitting = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Refleksi berhasil disimpan')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Refleksi berhasil disimpan')));
     if (context.canPop()) {
       context.pop();
     } else {
@@ -122,7 +124,8 @@ class _ReflectionScreenState extends ConsumerState<ReflectionScreen> {
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [AppColors.primaryBlue, Color(0xFF0A3575)],
+          colors: AppColors.brandGradient,
+          stops: AppColors.brandGradientStops,
         ),
       ),
       child: SafeArea(
@@ -185,15 +188,18 @@ class _ReflectionScreenState extends ConsumerState<ReflectionScreen> {
               color: AppColors.primaryBlueSurface,
               borderRadius: BorderRadius.circular(14),
             ),
-            child: const Icon(Icons.self_improvement_rounded, color: AppColors.primaryBlue, size: 30),
+            child: const Icon(
+              Icons.self_improvement_rounded,
+              color: AppColors.primaryBlue,
+              size: 30,
+            ),
           ),
           const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Yuk, lakukan refleksi!',
-                  style: AppTextStyles.heading.copyWith(fontSize: 15)),
+                Text('Yuk, lakukan refleksi!', style: AppTextStyles.heading.copyWith(fontSize: 15)),
                 const SizedBox(height: 4),
                 Text(
                   'Setelah mempelajari seluruh materi, luangkan waktu untuk merefleksikan pemahaman dan pengalaman belajarmu.',
@@ -207,7 +213,12 @@ class _ReflectionScreenState extends ConsumerState<ReflectionScreen> {
     );
   }
 
-  Widget _sectionCard({required int number, required String title, required String subtitle, required Widget child}) {
+  Widget _sectionCard({
+    required int number,
+    required String title,
+    required String subtitle,
+    required Widget child,
+  }) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
@@ -225,9 +236,15 @@ class _ReflectionScreenState extends ConsumerState<ReflectionScreen> {
               Container(
                 width: 26,
                 height: 26,
-                decoration: const BoxDecoration(shape: BoxShape.circle, color: AppColors.primaryBlue),
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: AppColors.primaryBlue,
+                ),
                 child: Center(
-                  child: Text('$number', style: AppTextStyles.pillText.copyWith(color: Colors.white)),
+                  child: Text(
+                    '$number',
+                    style: AppTextStyles.pillText.copyWith(color: Colors.white),
+                  ),
                 ),
               ),
               const SizedBox(width: 10),
@@ -252,7 +269,12 @@ class _ReflectionScreenState extends ConsumerState<ReflectionScreen> {
 
   Widget _buildUnderstandingQuestion() {
     final options = [
-      (UnderstandingLevel.sangatPaham, '⭐️', AppColors.secondaryGreen, AppColors.secondaryGreenSurface),
+      (
+        UnderstandingLevel.sangatPaham,
+        '⭐️',
+        AppColors.secondaryGreen,
+        AppColors.secondaryGreenSurface,
+      ),
       (UnderstandingLevel.paham, '🙂', AppColors.primaryBlue, AppColors.primaryBlueSurface),
       (UnderstandingLevel.cukupPaham, '😐', AppColors.accentOrange, AppColors.accentOrangeSurface),
       (UnderstandingLevel.belumPaham, '☹️', AppColors.error, const Color(0xFFFFEBEE)),
@@ -286,11 +308,16 @@ class _ReflectionScreenState extends ConsumerState<ReflectionScreen> {
                       Text(
                         level.label,
                         textAlign: TextAlign.center,
-                        style: AppTextStyles.labelSmall.copyWith(color: color, fontWeight: FontWeight.w800),
+                        style: AppTextStyles.labelSmall.copyWith(
+                          color: color,
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
                       const SizedBox(height: 8),
                       Icon(
-                        isSelected ? Icons.radio_button_checked_rounded : Icons.radio_button_off_rounded,
+                        isSelected
+                            ? Icons.radio_button_checked_rounded
+                            : Icons.radio_button_off_rounded,
                         size: 18,
                         color: isSelected ? color : AppColors.textDisabled,
                       ),

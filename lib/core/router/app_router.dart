@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import '../constants/app_motion.dart';
 import '../../presentation/splash/splash_screen.dart';
 import '../../presentation/auth/login_screen.dart';
 import '../../presentation/auth/register_screen.dart';
@@ -27,6 +28,7 @@ import '../../presentation/admin/admin_dashboard_screen.dart';
 import '../../presentation/admin/manage_materials_screen.dart';
 import '../../presentation/admin/student_monitor_screen.dart';
 import '../../presentation/admin/combined_reporting_screen.dart';
+import '../../presentation/onboarding/onboarding_screen.dart';
 
 /// NetLearn — App Router Configuration
 /// Uses GoRouter with named routes and slide transitions.
@@ -61,6 +63,15 @@ class AppRouter {
         pageBuilder: (context, state) => _buildPage(
           state,
           const RegisterScreen(),
+        ),
+      ),
+
+      GoRoute(
+        path: '/onboarding',
+        name: 'onboarding',
+        pageBuilder: (context, state) => _buildPage(
+          state,
+          const OnboardingScreen(),
         ),
       ),
 
@@ -298,7 +309,16 @@ class AppRouter {
       child: child,
       transitionDuration: const Duration(milliseconds: 300),
       transitionsBuilder: (context, animation, secondaryAnimation, child) {
-        return FadeTransition(opacity: animation, child: child);
+        // Fade with a touch of scale — softer than a hard cut, and it keeps
+        // root-level screens feeling like they belong to one surface.
+        final curved = CurvedAnimation(parent: animation, curve: AppMotion.enter);
+        return FadeTransition(
+          opacity: curved,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.98, end: 1).animate(curved),
+            child: child,
+          ),
+        );
       },
     );
   }
@@ -311,13 +331,22 @@ class AppRouter {
     return CustomTransitionPage(
       key: state.pageKey,
       child: child,
-      transitionDuration: const Duration(milliseconds: 350),
+      transitionDuration: const Duration(milliseconds: 320),
+      reverseTransitionDuration: const Duration(milliseconds: 260),
       transitionsBuilder: (context, animation, secondaryAnimation, child) {
-        final tween = Tween(begin: const Offset(1, 0), end: Offset.zero)
-            .chain(CurveTween(curve: Curves.easeOutCubic));
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: AppMotion.enter,
+          reverseCurve: Curves.easeInCubic,
+        );
         return SlideTransition(
-          position: animation.drive(tween),
-          child: child,
+          position: Tween<Offset>(
+            // A shorter travel than a full-width slide keeps navigation quick
+            // while still showing the direction you moved in.
+            begin: const Offset(0.12, 0),
+            end: Offset.zero,
+          ).animate(curved),
+          child: FadeTransition(opacity: curved, child: child),
         );
       },
     );

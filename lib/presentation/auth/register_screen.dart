@@ -45,7 +45,8 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
         .read(authProvider.notifier)
         .register(name, username, phoneNumber, password);
     if (success && mounted) {
-      context.go('/home');
+      // New accounts always start with the welcome tour.
+      context.go('/onboarding');
     }
   }
 
@@ -60,8 +61,8 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
         decoration: const BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter, end: Alignment.bottomCenter,
-            colors: [AppColors.secondaryGreen, Color(0xFF0D3B10)],
-            stops: [0.0, 0.4],
+            colors: AppColors.greenGradient,
+            stops: AppColors.brandGradientStops,
           ),
         ),
         child: SafeArea(

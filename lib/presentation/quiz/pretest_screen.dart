@@ -9,7 +9,8 @@ import '../../core/widgets/gradient_button.dart';
 import '../../data/models/quiz_model.dart';
 import '../../domain/providers/quiz_provider.dart';
 import '../../domain/providers/audio_provider.dart';
-import '../../domain/providers/progress_provider.dart';
+import 'quiz_result_flow.dart';
+import '../../core/widgets/loading_views.dart';
 
 /// Pre-Test Screen — Orange themed quiz with timer.
 class PretestScreen extends ConsumerStatefulWidget {
@@ -33,26 +34,27 @@ class _PretestScreenState extends ConsumerState<PretestScreen> {
   @override
   Widget build(BuildContext context) {
     final quiz = ref.watch(quizProvider);
-    if (quiz.activeQuiz == null) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    if (quiz.activeQuiz == null) return Scaffold(body: AppLoader(message: 'Menyiapkan Pre-Test...'));
     if (quiz.isFinished) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!_savedScore) {
-          _savedScore = true;
-          ref.read(progressProvider.notifier).saveUnitQuizScore(
-            unitId: '',
-            quizType: 'Pre-Test',
-            scorePercent: quiz.scorePercent,
-          );
-        }
-        context.pushReplacement('/feedback', extra: {
-          'score': quiz.scorePercent,
-          'totalQuestions': quiz.activeQuiz!.totalQuestions,
-          'xpEarned': quiz.activeQuiz!.xpReward,
-          'quizType': 'Pre-Test',
-          'unitTitle': '',
-        });
+        if (_savedScore) return;
+        _savedScore = true;
+        saveQuizResultThenContinue(
+          context: context,
+          ref: ref,
+          unitId: '',
+          quizType: 'Pre-Test',
+          scorePercent: quiz.scorePercent,
+          feedbackExtra: {
+            'score': quiz.scorePercent,
+            'totalQuestions': quiz.activeQuiz!.totalQuestions,
+            'xpEarned': quiz.activeQuiz!.xpReward,
+            'quizType': 'Pre-Test',
+            'unitTitle': '',
+          },
+        );
       });
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return Scaffold(body: AppLoader(message: 'Menyimpan hasilmu...'));
     }
 
     final q = quiz.activeQuiz!.questions[quiz.currentQuestionIndex];

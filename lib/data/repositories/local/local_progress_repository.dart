@@ -7,7 +7,7 @@ import '../../seed/seed_data.dart';
 
 /// GetStorage (GetX Local Storage) implementation of ProgressRepository
 /// Used for offline caching.
-class LocalProgressRepository implements ProgressRepository {
+class LocalProgressRepository extends ProgressRepository {
   final GetStorage _box = GetStorage();
 
   // Storage keys

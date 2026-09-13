@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:flutter/services.dart';
 import 'dart:convert';
 import '../../core/constants/app_colors.dart';
+import '../../core/constants/app_motion.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../core/widgets/gradient_button.dart';
 import '../../data/models/material_model.dart';
@@ -129,15 +130,22 @@ class MaterialDetailScreen extends ConsumerWidget {
                     // Slide dots
                     Row(
                       children: List.generate(unit.totalSlides, (i) {
+                        // The current step is thicker and the bar fills in as
+                        // the student moves, instead of switching colour flatly.
+                        final isCurrent = i == slideIndex;
                         return Expanded(
-                          child: Container(
-                            height: 4,
+                          child: AnimatedContainer(
+                            duration: AppMotion.normal,
+                            curve: AppMotion.enter,
+                            height: isCurrent ? 6 : 4,
                             margin: const EdgeInsets.symmetric(horizontal: 2),
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(99),
-                              color: i < slideIndex ? AppColors.primaryBlueAccent
-                                  : i == slideIndex ? Colors.white
-                                  : Colors.white.withValues(alpha: 0.25),
+                              color: i < slideIndex
+                                  ? AppColors.primaryBlueAccent
+                                  : isCurrent
+                                      ? Colors.white
+                                      : Colors.white.withValues(alpha: 0.25),
                             ),
                           ),
                         );
@@ -148,13 +156,28 @@ class MaterialDetailScreen extends ConsumerWidget {
               ),
             ),
           ),
-          // Content
+          // Content — keyed by slide so moving between slides animates rather
+          // than swapping the text in place.
           Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+            child: AnimatedSwitcher(
+              duration: AppMotion.normal,
+              switchInCurve: AppMotion.enter,
+              transitionBuilder: (child, animation) => FadeTransition(
+                opacity: animation,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0.06, 0),
+                    end: Offset.zero,
+                  ).animate(animation),
+                  child: child,
+                ),
+              ),
+              child: SingleChildScrollView(
+                key: ValueKey('slide-$unitId-$slideIndex'),
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                   // Illustration area
                   ClipRRect(
                     borderRadius: BorderRadius.circular(16),
@@ -211,7 +234,8 @@ class MaterialDetailScreen extends ConsumerWidget {
                         ),
                       )).toList(),
                     ).animate().fadeIn(delay: 300.ms),
-                ],
+                  ],
+                ),
               ),
             ),
           ),

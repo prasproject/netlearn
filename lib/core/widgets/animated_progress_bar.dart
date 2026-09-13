@@ -23,32 +23,40 @@ class AnimatedProgressBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final radius = borderRadius ?? BorderRadius.circular(99);
-    final colors = gradientColors ??
-        [AppColors.primaryBlueAccent, AppColors.primaryBlueSky];
+    final colors =
+        gradientColors ?? [AppColors.primaryBlueAccent, AppColors.primaryBlueSky];
+    final value = progress.clamp(0.0, 1.0);
 
-    return Container(
+    // `width: double.infinity` matters: the fill used to live in a loose Stack,
+    // so the track shrank to the width of the fill. Inside a centred Column
+    // (the home header) that made the whole bar look like it grew outward from
+    // the middle instead of filling from the left.
+    return SizedBox(
+      width: double.infinity,
       height: height,
-      decoration: BoxDecoration(
-        color: trackColor ?? Colors.white.withValues(alpha: 0.2),
-        borderRadius: radius,
-      ),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          return Stack(
-            children: [
-              AnimatedContainer(
-                duration: duration,
-                curve: Curves.easeOutCubic,
-                width: constraints.maxWidth * progress.clamp(0.0, 1.0),
-                height: height,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: trackColor ?? Colors.white.withValues(alpha: 0.2),
+          borderRadius: radius,
+        ),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0, end: value),
+            duration: duration,
+            curve: Curves.easeOutCubic,
+            builder: (context, animated, _) => FractionallySizedBox(
+              widthFactor: animated,
+              child: DecoratedBox(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(colors: colors),
                   borderRadius: radius,
                 ),
+                child: SizedBox(height: height),
               ),
-            ],
-          );
-        },
+            ),
+          ),
+        ),
       ),
     );
   }

@@ -51,6 +51,14 @@ class AppTextStyles {
     height: 1.2,
   );
 
+  /// Same size/weight as [cardTitle] but for white or light backgrounds.
+  static TextStyle cardTitleDark = _nunito(
+    fontSize: 16,
+    fontWeight: FontWeight.w900,
+    color: AppColors.textPrimary,
+    height: 1.2,
+  );
+
   static TextStyle heading = _nunito(
     fontSize: 14,
     fontWeight: FontWeight.w900,
@@ -120,20 +128,11 @@ class AppTextStyles {
   );
 
   // ── Score / Stats ──
-  static TextStyle scoreHuge = _nunito(
-    fontSize: 28,
-    fontWeight: FontWeight.w900,
-  );
+  static TextStyle scoreHuge = _nunito(fontSize: 28, fontWeight: FontWeight.w900);
 
-  static TextStyle scoreLarge = _nunito(
-    fontSize: 22,
-    fontWeight: FontWeight.w900,
-  );
+  static TextStyle scoreLarge = _nunito(fontSize: 22, fontWeight: FontWeight.w900);
 
-  static TextStyle scoreMedium = _nunito(
-    fontSize: 18,
-    fontWeight: FontWeight.w900,
-  );
+  static TextStyle scoreMedium = _nunito(fontSize: 18, fontWeight: FontWeight.w900);
 
   static TextStyle statValue = _nunito(
     fontSize: 18,
@@ -141,10 +140,7 @@ class AppTextStyles {
     color: Colors.white,
   );
 
-  static TextStyle statLabel = _nunito(
-    fontSize: 12,
-    fontWeight: FontWeight.w700,
-  );
+  static TextStyle statLabel = _nunito(fontSize: 12, fontWeight: FontWeight.w700);
 
   // ── Navigation ──
   static TextStyle navLabel = _nunito(
@@ -160,10 +156,7 @@ class AppTextStyles {
   );
 
   // ── Pill ──
-  static TextStyle pillText = _nunito(
-    fontSize: 12,
-    fontWeight: FontWeight.w800,
-  );
+  static TextStyle pillText = _nunito(fontSize: 12, fontWeight: FontWeight.w800);
 
   // ── Badge ──
   static TextStyle badgeName = _nunito(
@@ -187,10 +180,7 @@ class AppTextStyles {
   );
 
   // ── Quiz option ──
-  static TextStyle quizOption = _nunito(
-    fontSize: 13,
-    fontWeight: FontWeight.w700,
-  );
+  static TextStyle quizOption = _nunito(fontSize: 13, fontWeight: FontWeight.w700);
 
   // ── Version ──
   static TextStyle versionText = _nunito(
@@ -200,10 +190,7 @@ class AppTextStyles {
   );
 
   // ── Chip ──
-  static TextStyle chip = _nunito(
-    fontSize: 12,
-    fontWeight: FontWeight.w800,
-  );
+  static TextStyle chip = _nunito(fontSize: 12, fontWeight: FontWeight.w800);
 
   // ── Certificate ──
   static TextStyle certTitle = _nunito(

@@ -1,6 +1,10 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:get_storage/get_storage.dart';
+
+import '../../data/models/user_model.dart';
+import 'auth_provider.dart';
 
 /// NetLearn — Audio Provider
 /// Manages sound effects, background music, and audio narration.
@@ -60,16 +64,65 @@ class AudioState {
 }
 
 class AudioNotifier extends StateNotifier<AudioState> {
-  AudioNotifier() : super(const AudioState()) {
+  AudioNotifier(this._ref) : super(const AudioState()) {
     _sfxPlayer = AudioPlayer();
     _musicPlayer = AudioPlayer();
     _narrationPlayer = AudioPlayer();
+    _restoreLocalPreferences();
   }
+
+  final Ref _ref;
+  final _storage = GetStorage();
+  String? _hydratedUserId;
+
+  static const String _sfxKey = 'audio_sfx_enabled';
+  static const String _musicKey = 'audio_music_enabled';
 
   late final AudioPlayer _sfxPlayer;
   late final AudioPlayer _musicPlayer;
   late final AudioPlayer _narrationPlayer;
   static const String _backgroundMusicAsset = 'audio/retro.mp3';
+
+  /// Device-level fallback so the switches keep their value even before login.
+  void _restoreLocalPreferences() {
+    final sfx = _storage.read(_sfxKey);
+    final music = _storage.read(_musicKey);
+    state = state.copyWith(
+      sfxEnabled: sfx is bool ? sfx : state.sfxEnabled,
+      musicEnabled: music is bool ? music : state.musicEnabled,
+    );
+  }
+
+  /// Adopt the preferences stored on the user record (source of truth) once per
+  /// signed-in user, so the switch, the player, and Firebase always agree.
+  void applyUserSettings(UserModel user) {
+    if (_hydratedUserId == user.id) return;
+    _hydratedUserId = user.id;
+    final settings = user.settings;
+    state = state.copyWith(
+      sfxEnabled: settings.audioEnabled,
+      musicEnabled: settings.musicEnabled,
+    );
+    _storage.write(_sfxKey, settings.audioEnabled);
+    _storage.write(_musicKey, settings.musicEnabled);
+    if (settings.musicEnabled) {
+      playMusic();
+    } else {
+      stopMusic();
+    }
+  }
+
+  /// Forget the hydration marker so the next user gets their own settings.
+  void forgetUser() => _hydratedUserId = null;
+
+  void _persistPreferences() {
+    _storage.write(_sfxKey, state.sfxEnabled);
+    _storage.write(_musicKey, state.musicEnabled);
+    _ref.read(authProvider.notifier).setAudioPreferences(
+          sfxEnabled: state.sfxEnabled,
+          musicEnabled: state.musicEnabled,
+        );
+  }
 
   /// Play a sound effect with haptic feedback
   Future<void> playSfx(SoundEffect effect) async {
@@ -150,12 +203,13 @@ class AudioNotifier extends StateNotifier<AudioState> {
     state = state.copyWith(narrationPlaying: false);
   }
 
-  /// Toggle sound effects
+  /// Toggle sound effects (persisted locally and on the user record)
   void toggleSfx() {
     state = state.copyWith(sfxEnabled: !state.sfxEnabled);
+    _persistPreferences();
   }
 
-  /// Toggle background music
+  /// Toggle background music (persisted locally and on the user record)
   void toggleMusic() {
     final newVal = !state.musicEnabled;
     state = state.copyWith(musicEnabled: newVal);
@@ -164,6 +218,7 @@ class AudioNotifier extends StateNotifier<AudioState> {
     } else {
       stopMusic();
     }
+    _persistPreferences();
   }
 
   /// Set SFX volume (0.0 to 1.0)
@@ -171,8 +226,10 @@ class AudioNotifier extends StateNotifier<AudioState> {
     state = state.copyWith(sfxVolume: vol.clamp(0.0, 1.0));
   }
 
-  /// Mute all audio
+  /// Mute all audio for this session only (used on logout — deliberately not
+  /// persisted, so the user's saved preference survives a re-login).
   void muteAll() {
+    forgetUser();
     state = state.copyWith(sfxEnabled: false, musicEnabled: false);
     stopMusic();
     stopNarration();
@@ -206,5 +263,18 @@ class AudioNotifier extends StateNotifier<AudioState> {
 
 final audioProvider =
     StateNotifierProvider<AudioNotifier, AudioState>((ref) {
-  return AudioNotifier();
+  final notifier = AudioNotifier(ref);
+  // Hydrate from the signed-in user's stored settings as soon as they load.
+  ref.listen<UserModel?>(
+    authProvider.select((s) => s.user),
+    (previous, next) {
+      if (next == null) {
+        notifier.forgetUser();
+        return;
+      }
+      notifier.applyUserSettings(next);
+    },
+    fireImmediately: true,
+  );
+  return notifier;
 });

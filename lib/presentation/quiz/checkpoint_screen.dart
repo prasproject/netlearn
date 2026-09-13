@@ -8,7 +8,8 @@ import '../../core/widgets/gradient_button.dart';
 import '../../data/models/quiz_model.dart';
 import '../../domain/providers/quiz_provider.dart';
 import '../../domain/providers/audio_provider.dart';
-import '../../domain/providers/progress_provider.dart';
+import 'quiz_result_flow.dart';
+import '../../core/widgets/loading_views.dart';
 
 /// Checkpoint Screen — Purple themed mini quiz after a material section.
 class CheckpointScreen extends ConsumerStatefulWidget {
@@ -33,24 +34,28 @@ class _CheckpointScreenState extends ConsumerState<CheckpointScreen> {
   @override
   Widget build(BuildContext context) {
     final quiz = ref.watch(quizProvider);
-    if (quiz.activeQuiz == null) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    if (quiz.activeQuiz == null) return Scaffold(body: AppLoader(message: 'Menyiapkan checkpoint...'));
 
     if (quiz.isFinished) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!_savedScore) {
-          _savedScore = true;
-          ref.read(progressProvider.notifier).saveUnitQuizScore(
-            unitId: widget.unitId,
-            quizType: 'Checkpoint',
-            scorePercent: quiz.scorePercent,
-          );
-        }
-        context.pushReplacement('/feedback', extra: {
-          'score': quiz.scorePercent, 'totalQuestions': quiz.activeQuiz!.totalQuestions,
-          'xpEarned': quiz.activeQuiz!.xpReward, 'quizType': 'Checkpoint', 'unitTitle': quiz.activeQuiz!.title,
-        });
+        if (_savedScore) return;
+        _savedScore = true;
+        saveQuizResultThenContinue(
+          context: context,
+          ref: ref,
+          unitId: widget.unitId,
+          quizType: 'Checkpoint',
+          scorePercent: quiz.scorePercent,
+          feedbackExtra: {
+            'score': quiz.scorePercent,
+            'totalQuestions': quiz.activeQuiz!.totalQuestions,
+            'xpEarned': quiz.activeQuiz!.xpReward,
+            'quizType': 'Checkpoint',
+            'unitTitle': quiz.activeQuiz!.title,
+          },
+        );
       });
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return Scaffold(body: AppLoader(message: 'Menyimpan hasilmu...'));
     }
 
     final q = quiz.activeQuiz!.questions[quiz.currentQuestionIndex];

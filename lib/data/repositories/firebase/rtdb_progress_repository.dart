@@ -7,12 +7,43 @@ import '../progress_repository.dart';
 import '../../seed/seed_data.dart';
 
 /// Firebase Realtime Database implementation of ProgressRepository.
-class RtdbProgressRepository implements ProgressRepository {
+class RtdbProgressRepository extends ProgressRepository {
   final DatabaseReference _db = FirebaseDatabase.instance.ref('progress');
   final DatabaseReference _achDb = FirebaseDatabase.instance.ref('achievements');
   final DatabaseReference _reflectionDb = FirebaseDatabase.instance.ref('reflection');
   final _storage = GetStorage();
   static const String _overallUnitId = '__overall__';
+
+  @override
+  bool get supportsRealtime => true;
+
+  /// Normalise any RTDB payload (native Map on mobile, JS interop map on web)
+  /// into a plain `Map<String, dynamic>`.
+  static Map<String, dynamic> _asMap(Object? value) {
+    try {
+      return Map<String, dynamic>.from(value as Map);
+    } catch (_) {
+      return Map<String, dynamic>.from(jsonDecode(jsonEncode(value)));
+    }
+  }
+
+  static List<ProgressModel> _parseProgress(Object? value) {
+    final data = _asMap(value);
+    return data.entries.map((e) {
+      final map = _asMap(e.value);
+      map['unitId'] = e.key;
+      return ProgressModel.fromJson(map);
+    }).toList();
+  }
+
+  static List<AchievementModel> _parseAchievements(Object? value) {
+    final data = _asMap(value);
+    return data.entries.map((e) {
+      final map = _asMap(e.value);
+      map['id'] = e.key;
+      return AchievementModel.fromJson(map);
+    }).toList();
+  }
 
   List<ProgressModel> _mergeWithSeedUnits(List<ProgressModel> source) {
     final byId = <String, ProgressModel>{for (final p in source) p.unitId: p};
@@ -51,29 +82,77 @@ class RtdbProgressRepository implements ProgressRepository {
     return merged;
   }
 
+  List<AchievementModel> _mergeAchievementsWithSeed(List<AchievementModel> source) {
+    final byId = {for (final a in source) a.id: a};
+    return SeedData.achievements
+        .map((seed) => SeedData.mergeAchievement(seed, byId[seed.id]))
+        .toList();
+  }
+
+  void _cacheProgress(String userId, List<ProgressModel> merged) {
+    _storage.write('progress_$userId', merged.map((e) => e.toJson()).toList());
+  }
+
+  void _cacheAchievements(String userId, List<AchievementModel> merged) {
+    _storage.write('achievements_$userId', merged.map((e) => e.toJson()).toList());
+  }
+
+  // ─── Realtime streams (database is the source of truth) ───
+
+  @override
+  Stream<List<ProgressModel>> watchProgress(String userId) {
+    if (userId.trim().isEmpty) return const Stream<List<ProgressModel>>.empty();
+    return _db.child(userId).onValue.map((event) {
+      final snapshot = event.snapshot;
+      if (!snapshot.exists || snapshot.value == null) {
+        return _mergeWithSeedUnits(const []);
+      }
+      final merged = _mergeWithSeedUnits(_parseProgress(snapshot.value));
+      _cacheProgress(userId, merged);
+      return merged;
+    });
+  }
+
+  @override
+  Stream<List<AchievementModel>> watchAchievements(String userId) {
+    if (userId.trim().isEmpty) {
+      return const Stream<List<AchievementModel>>.empty();
+    }
+    return _achDb.child(userId).onValue.map((event) {
+      final snapshot = event.snapshot;
+      if (!snapshot.exists || snapshot.value == null) {
+        return _mergeAchievementsWithSeed(const []);
+      }
+      final merged = _mergeAchievementsWithSeed(_parseAchievements(snapshot.value));
+      _cacheAchievements(userId, merged);
+      return merged;
+    });
+  }
+
+  @override
+  Stream<ReflectionModel?> watchReflection(String userId) {
+    if (userId.trim().isEmpty) return const Stream<ReflectionModel?>.empty();
+    return _reflectionDb.child(userId).onValue.map((event) {
+      final snapshot = event.snapshot;
+      if (!snapshot.exists || snapshot.value == null) return null;
+      final data = _asMap(snapshot.value);
+      _storage.write('reflection_$userId', data);
+      return ReflectionModel.fromJson(data);
+    });
+  }
+
+  // ─── One-shot reads (used as the first paint / offline fallback) ───
+
   @override
   Future<List<ProgressModel>> getProgress(String userId) async {
     try {
       final snapshot = await _db.child(userId).get();
       if (snapshot.exists) {
-        Map<String, dynamic> data;
-        try {
-          data = Map<String, dynamic>.from(snapshot.value as Map);
-        } catch (_) {
-          data = Map<String, dynamic>.from(jsonDecode(jsonEncode(snapshot.value)));
-        }
-        final list = data.entries.map((e) {
-          final map = Map<String, dynamic>.from(e.value as Map);
-          map['unitId'] = e.key;
-          return ProgressModel.fromJson(map);
-        }).toList();
-        
-        // Cache to GetStorage
-        final merged = _mergeWithSeedUnits(list);
-        _storage.write('progress_$userId', merged.map((e) => e.toJson()).toList());
+        final merged = _mergeWithSeedUnits(_parseProgress(snapshot.value));
+        _cacheProgress(userId, merged);
         return merged;
       }
-    } catch (e) {
+    } catch (_) {
       // Fallback to local storage on network error
     }
 
@@ -102,15 +181,18 @@ class RtdbProgressRepository implements ProgressRepository {
 
   @override
   Future<void> saveProgress(String userId, ProgressModel progress) async {
-    await _db.child(userId).child(progress.unitId).set(progress.toJson());
-    _syncLocalProgress(userId);
+    // `update` (not `set`) so a partially-filled model can never wipe fields
+    // written by another flow — e.g. saving slide progress must not erase quiz
+    // scores stored on the same unit node.
+    await _db.child(userId).child(progress.unitId).update(progress.toUpdateJson());
+    await _syncLocalProgress(userId);
   }
 
   @override
   Future<void> saveQuizScore(String userId, String unitId, {int? pretestScore, int? checkpointScore, int? finalScore, int? practiceScore}) async {
     final ref = _db.child(userId).child(unitId);
     final snapshot = await ref.get();
-    
+
     Map<String, dynamic> updateData = {};
     if (pretestScore != null) updateData['pretestScore'] = pretestScore;
     if (finalScore != null) updateData['finalScore'] = finalScore;
@@ -124,7 +206,7 @@ class RtdbProgressRepository implements ProgressRepository {
       updateData['totalMaterials'] = 0;
     } else {
       try {
-        final current = Map<String, dynamic>.from(snapshot.value as Map);
+        final current = _asMap(snapshot.value);
         if (!current.containsKey('totalMaterials')) {
           updateData['totalMaterials'] = 0;
         }
@@ -141,71 +223,44 @@ class RtdbProgressRepository implements ProgressRepository {
         updateData['totalMaterials'] = 0;
       }
     }
-    
+
     if (checkpointScore != null) {
       if (snapshot.exists) {
-        final current = Map<String, dynamic>.from(snapshot.value as Map);
-        List<int> scores = (current['checkpointScores'] as List?)?.cast<int>() ?? [];
+        final current = _asMap(snapshot.value);
+        List<int> scores = (current['checkpointScores'] as List?)
+                ?.map((e) => (e as num).toInt())
+                .toList() ??
+            <int>[];
         scores.add(checkpointScore);
         updateData['checkpointScores'] = scores;
       } else {
         updateData['checkpointScores'] = [checkpointScore];
       }
     }
-    
+
     if (updateData.isNotEmpty) {
       // `update` is fine; it will create the node if missing.
       await ref.update(updateData);
-      _syncLocalProgress(userId);
+      await _syncLocalProgress(userId);
     }
   }
 
-  void _syncLocalProgress(String userId) async {
+  Future<void> _syncLocalProgress(String userId) async {
     try {
       final snapshot = await _db.child(userId).get();
       if (snapshot.exists) {
-        Map<String, dynamic> data;
-        try {
-          data = Map<String, dynamic>.from(snapshot.value as Map);
-        } catch (_) {
-          data = Map<String, dynamic>.from(jsonDecode(jsonEncode(snapshot.value)));
-        }
-        final list = data.entries.map((e) {
-          final map = Map<String, dynamic>.from(e.value as Map);
-          map['unitId'] = e.key;
-          return ProgressModel.fromJson(map);
-        }).toList();
-        final merged = _mergeWithSeedUnits(list);
-        _storage.write('progress_$userId', merged.map((e) => e.toJson()).toList());
+        _cacheProgress(userId, _mergeWithSeedUnits(_parseProgress(snapshot.value)));
       }
     } catch (_) {}
   }
 
   @override
   Future<List<AchievementModel>> getAchievements(String userId) async {
-    List<AchievementModel> mergeWithSeed(List<AchievementModel> source) {
-      final byId = {for (final a in source) a.id: a};
-      return SeedData.achievements
-          .map((seed) => SeedData.mergeAchievement(seed, byId[seed.id]))
-          .toList();
-    }
-
     try {
       final snapshot = await _achDb.child(userId).get();
       if (snapshot.exists) {
-        Map<String, dynamic> data;
-        try {
-          data = Map<String, dynamic>.from(snapshot.value as Map);
-        } catch (_) {
-          data = Map<String, dynamic>.from(jsonDecode(jsonEncode(snapshot.value)));
-        }
-        final list = data.entries.map((e) {
-          final map = Map<String, dynamic>.from(e.value as Map);
-          map['id'] = e.key;
-          return AchievementModel.fromJson(map);
-        }).toList();
-        final merged = mergeWithSeed(list);
-        _storage.write('achievements_$userId', merged.map((e) => e.toJson()).toList());
+        final merged = _mergeAchievementsWithSeed(_parseAchievements(snapshot.value));
+        _cacheAchievements(userId, merged);
         return merged;
       }
     } catch (_) {}
@@ -216,11 +271,11 @@ class RtdbProgressRepository implements ProgressRepository {
         final local = (localData as List)
             .map((e) => AchievementModel.fromJson(Map<String, dynamic>.from(e)))
             .toList();
-        return mergeWithSeed(local);
+        return _mergeAchievementsWithSeed(local);
       } catch (_) {}
     }
 
-    return mergeWithSeed(const []);
+    return _mergeAchievementsWithSeed(const []);
   }
 
   @override
@@ -254,7 +309,7 @@ class RtdbProgressRepository implements ProgressRepository {
 
     final updated = existing[idx];
     await _achDb.child(userId).child(achievementId).set(updated.toJson());
-    _storage.write('achievements_$userId', existing.map((e) => e.toJson()).toList());
+    _cacheAchievements(userId, existing);
   }
 
   @override
@@ -262,12 +317,7 @@ class RtdbProgressRepository implements ProgressRepository {
     try {
       final snapshot = await _reflectionDb.child(userId).get();
       if (snapshot.exists) {
-        Map<String, dynamic> data;
-        try {
-          data = Map<String, dynamic>.from(snapshot.value as Map);
-        } catch (_) {
-          data = Map<String, dynamic>.from(jsonDecode(jsonEncode(snapshot.value)));
-        }
+        final data = _asMap(snapshot.value);
         _storage.write('reflection_$userId', data);
         return ReflectionModel.fromJson(data);
       }

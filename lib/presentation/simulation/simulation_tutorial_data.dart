@@ -74,6 +74,20 @@ class SimulationTutorials {
       ],
       tip: 'Mesh punya redundansi tinggi — jika satu link putus, masih ada jalur lain.',
     ),
+    'sim-playground': SimulationTutorial(
+      topologyName: 'Lab Bebas',
+      aboutTopology:
+          'Kanvas kosong untuk bereksperimen. Kamu yang menentukan perangkat, kabel, dan alamat IP-nya — lalu buktikan rancanganmu dengan mengirim paket.',
+      goalSteps: [
+        'Tab "Bangun": tambahkan perangkat (PC, Switch, Router, Server).',
+        'Pilih jenis kabel, ketuk perangkat pertama lalu perangkat kedua untuk menyambung.',
+        'Ketuk perangkat untuk mengubah alamat IP-nya.',
+        'Tab "Kirim": pilih pengirim & tujuan, lalu tekan Kirim Paket.',
+        'Baca pesan status jika gagal — di situ letak kesalahannya.',
+      ],
+      tip:
+          'Straight untuk perangkat berbeda jenis (PC↔Switch), cross untuk perangkat sejenis (PC↔PC), dan beda subnet wajib lewat router.',
+    ),
     'sim-star': SimulationTutorial(
       topologyName: 'Topologi Star',
       aboutTopology:

@@ -91,11 +91,14 @@ class _CertificateScreenState extends ConsumerState<CertificateScreen> {
 
     return Scaffold(
       body: Container(
-        width: double.infinity, height: double.infinity,
+        width: double.infinity,
+        height: double.infinity,
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            begin: Alignment.topCenter, end: Alignment.bottomCenter,
-            colors: [AppColors.primaryBlue, Color(0xFF0A3575)],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: AppColors.brandGradient,
+            stops: AppColors.brandGradientStops,
           ),
         ),
         child: SafeArea(
@@ -110,7 +113,8 @@ class _CertificateScreenState extends ConsumerState<CertificateScreen> {
                     children: [
                       // Badge
                       Container(
-                        width: 80, height: 80,
+                        width: 80,
+                        height: 80,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           border: Border.all(color: AppColors.gold, width: 4),
@@ -119,17 +123,20 @@ class _CertificateScreenState extends ConsumerState<CertificateScreen> {
                         child: const Icon(Icons.star_rounded, size: 44, color: AppColors.gold),
                       ).animate().scale(duration: 600.ms, curve: Curves.elasticOut),
                       const SizedBox(height: 16),
-                      Text(AppStrings.congratulations,
+                      Text(
+                        AppStrings.congratulations,
                         textAlign: TextAlign.center,
                         style: AppTextStyles.certTitle,
                       ).animate().fadeIn(delay: 300.ms),
                       const SizedBox(height: 8),
-                      Text(user.displayName,
+                      Text(
+                        user.displayName,
                         textAlign: TextAlign.center,
                         style: AppTextStyles.certName,
                       ).animate().fadeIn(delay: 400.ms),
                       const SizedBox(height: 8),
-                      Text('${AppStrings.certificateCourse}\n${AppStrings.certificateSchool}',
+                      Text(
+                        '${AppStrings.certificateCourse}\n${AppStrings.certificateSchool}',
                         textAlign: TextAlign.center,
                         style: AppTextStyles.certSub,
                       ).animate().fadeIn(delay: 500.ms),
@@ -172,20 +179,28 @@ class _CertificateScreenState extends ConsumerState<CertificateScreen> {
                                   children: [
                                     if (_isGenerating)
                                       const SizedBox(
-                                        width: 14, height: 14,
+                                        width: 14,
+                                        height: 14,
                                         child: CircularProgressIndicator(
-                                          strokeWidth: 2, color: Colors.white,
+                                          strokeWidth: 2,
+                                          color: Colors.white,
                                         ),
                                       )
                                     else
                                       Icon(
-                                        _savedPath != null ? Icons.check_circle_rounded : Icons.picture_as_pdf_rounded,
-                                        size: 16, color: Colors.white,
+                                        _savedPath != null
+                                            ? Icons.check_circle_rounded
+                                            : Icons.picture_as_pdf_rounded,
+                                        size: 16,
+                                        color: Colors.white,
                                       ),
                                     const SizedBox(width: 6),
                                     Text(
-                                      _isGenerating ? 'Membuat...'
-                                          : _savedPath != null ? 'Tersimpan ✓' : 'Simpan PDF',
+                                      _isGenerating
+                                          ? 'Membuat...'
+                                          : _savedPath != null
+                                          ? 'Tersimpan ✓'
+                                          : 'Simpan PDF',
                                       style: AppTextStyles.buttonPrimary,
                                     ),
                                   ],
@@ -204,10 +219,16 @@ class _CertificateScreenState extends ConsumerState<CertificateScreen> {
                                   decoration: BoxDecoration(
                                     color: Colors.white.withValues(alpha: 0.15),
                                     borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(color: Colors.white.withValues(alpha: 0.3), width: 1.5),
+                                    border: Border.all(
+                                      color: Colors.white.withValues(alpha: 0.3),
+                                      width: 1.5,
+                                    ),
                                   ),
-                                  child: Text('Buka PDF', textAlign: TextAlign.center,
-                                    style: AppTextStyles.buttonPrimary),
+                                  child: Text(
+                                    'Buka PDF',
+                                    textAlign: TextAlign.center,
+                                    style: AppTextStyles.buttonPrimary,
+                                  ),
                                 ),
                               ),
                             ),
@@ -219,11 +240,22 @@ class _CertificateScreenState extends ConsumerState<CertificateScreen> {
                               child: Container(
                                 padding: const EdgeInsets.symmetric(vertical: 12),
                                 decoration: BoxDecoration(
-                                  color: AppColors.gold, borderRadius: BorderRadius.circular(12),
-                                  boxShadow: [const BoxShadow(color: AppColors.goldDark, offset: Offset(0, 3))],
+                                  color: AppColors.gold,
+                                  borderRadius: BorderRadius.circular(12),
+                                  boxShadow: [
+                                    const BoxShadow(
+                                      color: AppColors.goldDark,
+                                      offset: Offset(0, 3),
+                                    ),
+                                  ],
                                 ),
-                                child: Text('Beranda', textAlign: TextAlign.center,
-                                  style: AppTextStyles.buttonPrimary.copyWith(color: AppColors.textPrimary)),
+                                child: Text(
+                                  'Beranda',
+                                  textAlign: TextAlign.center,
+                                  style: AppTextStyles.buttonPrimary.copyWith(
+                                    color: AppColors.textPrimary,
+                                  ),
+                                ),
                               ),
                             ),
                           ),
@@ -257,7 +289,8 @@ class _CertificateScreenState extends ConsumerState<CertificateScreen> {
   }
 
   Widget _bgCircle(double size) => Container(
-    width: size, height: size,
+    width: size,
+    height: size,
     decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withValues(alpha: 0.05)),
   );
 }

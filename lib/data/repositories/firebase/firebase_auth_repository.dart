@@ -5,7 +5,7 @@ import '../auth_repository.dart';
 
 /// Firebase implementation of AuthRepository.
 /// Uses Firebase Phone Authentication.
-class FirebaseAuthRepository implements AuthRepository {
+class FirebaseAuthRepository extends AuthRepository {
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
   @override

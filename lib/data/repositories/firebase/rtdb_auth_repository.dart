@@ -5,9 +5,84 @@ import '../../models/user_model.dart';
 import '../auth_repository.dart';
 
 /// Firebase Realtime Database implementation of AuthRepository (Custom Auth).
-class RtdbAuthRepository implements AuthRepository {
+class RtdbAuthRepository extends AuthRepository {
   final DatabaseReference _db = FirebaseDatabase.instance.ref('users');
   final _storage = GetStorage();
+
+  @override
+  bool get supportsRealtime => true;
+
+  /// Normalise any RTDB payload (native Map on mobile, JS interop map on web).
+  static Map<String, dynamic> _asMap(Object? value) {
+    try {
+      return Map<String, dynamic>.from(value as Map);
+    } catch (_) {
+      return Map<String, dynamic>.from(jsonDecode(jsonEncode(value)));
+    }
+  }
+
+  /// Live user record, so XP/level/streak/settings on screen always match the
+  /// database — including changes made from another device or by the admin.
+  @override
+  Stream<UserModel?> watchUser(String userId) {
+    if (userId.trim().isEmpty || userId == 'admin') {
+      return const Stream<UserModel?>.empty();
+    }
+    return _db.child(userId).onValue.map((event) {
+      final snapshot = event.snapshot;
+      if (!snapshot.exists || snapshot.value == null) return null;
+      final map = _asMap(snapshot.value);
+      map['id'] = userId;
+      try {
+        final user = UserModel.fromJson(map);
+        _storage.write('currentUser', user.toJson());
+        return user;
+      } catch (_) {
+        return null;
+      }
+    });
+  }
+
+  /// XP is incremented inside a transaction so two rewards fired close together
+  /// (e.g. finishing a slide and a quiz) can never overwrite each other.
+  @override
+  Future<UserModel?> addXp(String userId, int amount) async {
+    if (userId.trim().isEmpty || amount <= 0) return null;
+    final ref = _db.child(userId);
+
+    final result = await ref.runTransaction((raw) {
+      if (raw == null) return Transaction.abort();
+      final Map<String, dynamic> map;
+      try {
+        map = _asMap(raw);
+      } catch (_) {
+        return Transaction.abort();
+      }
+      final currentXp = switch (map['xp']) {
+        int v => v,
+        num v => v.toInt(),
+        String v => int.tryParse(v) ?? 0,
+        _ => 0,
+      };
+      final newXp = currentXp < 0 ? amount : currentXp + amount;
+      map['xp'] = newXp;
+      map['level'] = (newXp ~/ 100) + 1;
+      return Transaction.success(map);
+    });
+
+    if (!result.committed) return null;
+    final value = result.snapshot.value;
+    if (value == null) return null;
+    try {
+      final map = _asMap(value);
+      map['id'] = userId;
+      final user = UserModel.fromJson(map);
+      await _storage.write('currentUser', user.toJson());
+      return user;
+    } catch (_) {
+      return null;
+    }
+  }
 
   @override
   Future<UserModel?> login({

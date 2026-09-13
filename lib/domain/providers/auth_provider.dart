@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/models/user_model.dart';
 import '../../data/repositories/auth_repository.dart';
@@ -12,12 +14,17 @@ class AuthState {
   final bool isNewUser;
   final String? authError;
 
+  /// Set when a profile write (XP, streak, settings) failed to reach the
+  /// database, so the UI can tell the user instead of silently drifting.
+  final String? syncError;
+
   const AuthState({
     this.user,
     this.isLoading = false,
     this.isLoggedIn = false,
     this.isNewUser = false,
     this.authError,
+    this.syncError,
   });
 
   static const _unset = Object();
@@ -28,6 +35,7 @@ class AuthState {
     bool? isLoggedIn,
     bool? isNewUser,
     Object? authError = _unset,
+    Object? syncError = _unset,
   }) {
     return AuthState(
       user: user ?? this.user,
@@ -35,6 +43,7 @@ class AuthState {
       isLoggedIn: isLoggedIn ?? this.isLoggedIn,
       isNewUser: isNewUser ?? this.isNewUser,
       authError: identical(authError, _unset) ? this.authError : authError as String?,
+      syncError: identical(syncError, _unset) ? this.syncError : syncError as String?,
     );
   }
 }
@@ -43,6 +52,49 @@ class AuthNotifier extends StateNotifier<AuthState> {
   final AuthRepository _repo;
 
   AuthNotifier(this._repo) : super(const AuthState());
+
+  StreamSubscription<UserModel?>? _userSub;
+  String? _watchedUserId;
+
+  /// Keep the in-memory user glued to the database record. Without this the app
+  /// shows the locally cached profile while Firebase already holds newer XP,
+  /// streak, or settings (e.g. changed on another device or reset by admin).
+  void _bindUserStream(String userId) {
+    if (!_repo.supportsRealtime) return;
+    if (_watchedUserId == userId && _userSub != null) return;
+    _userSub?.cancel();
+    _watchedUserId = userId;
+    _userSub = _repo.watchUser(userId).listen(
+      (remote) {
+        if (!mounted || remote == null) return;
+        if (state.user?.id != remote.id) return;
+        state = state.copyWith(user: remote, isLoggedIn: true, syncError: null);
+      },
+      onError: (Object _) {
+        if (!mounted) return;
+        state = state.copyWith(
+          syncError: 'Gagal sinkron profil. Periksa koneksi internet.',
+        );
+      },
+    );
+  }
+
+  void _unbindUserStream() {
+    _userSub?.cancel();
+    _userSub = null;
+    _watchedUserId = null;
+  }
+
+  void clearSyncError() {
+    if (!mounted || state.syncError == null) return;
+    state = state.copyWith(syncError: null);
+  }
+
+  @override
+  void dispose() {
+    _userSub?.cancel();
+    super.dispose();
+  }
 
   /// Restore existing login session from local persistence.
   Future<void> initializeSession() async {
@@ -58,6 +110,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
           isLoggedIn: true,
           isNewUser: false,
         );
+        _bindUserStream(user.id);
         await _refreshDailyStreak();
         return;
       }
@@ -102,6 +155,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
           isLoggedIn: true,
           isNewUser: false,
         );
+        _bindUserStream(user.id);
         await _refreshDailyStreak();
         return true;
       }
@@ -134,6 +188,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
           isLoggedIn: true,
           isNewUser: true,
         );
+        _bindUserStream(user.id);
         await _refreshDailyStreak();
         return true;
       }
@@ -155,24 +210,64 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   // --- Profile methods ---
 
-  void addXP(int amount) {
-    if (state.user == null || amount <= 0) return;
-    final current = state.user!;
-    final newXp = current.xp + amount;
-    final newLevel = (newXp ~/ 100) + 1;
-    final updated = current.copyWith(xp: newXp, level: newLevel);
-    state = state.copyWith(user: updated, isLoggedIn: true);
-    _repo.updateUser(updated);
+  /// Award XP. The increment happens in a database transaction so two rewards
+  /// fired in quick succession can't overwrite each other, and the value shown
+  /// on screen is the value the database confirmed.
+  Future<void> addXP(int amount) async {
+    final current = state.user;
+    if (current == null || amount <= 0) return;
+    if (current.role == 'admin') return;
+
+    // Optimistic update for instant feedback...
+    final optimistic = current.copyWith(
+      xp: current.xp + amount,
+      level: ((current.xp + amount) ~/ 100) + 1,
+    );
+    state = state.copyWith(user: optimistic, isLoggedIn: true, syncError: null);
+
+    try {
+      final stored = await _repo.addXp(current.id, amount);
+      if (!mounted) return;
+      if (stored != null) {
+        // ...then reconcile with whatever the database actually holds.
+        state = state.copyWith(user: stored, isLoggedIn: true);
+        return;
+      }
+      // Backend without transaction support: fall back to a plain write.
+      await _repo.updateUser(optimistic);
+    } catch (e) {
+      if (!mounted) return;
+      state = state.copyWith(
+        user: current,
+        isLoggedIn: true,
+        syncError: 'XP gagal disimpan. Periksa koneksi internet.',
+      );
+    }
   }
 
-  void updateStreak(int days) {
-    if (state.user == null) return;
-    final updated = state.user!.copyWith(streak: days);
-    state = state.copyWith(
-      user: updated,
-      isLoggedIn: true,
-    );
-    _repo.updateUser(updated);
+  Future<void> updateStreak(int days) async {
+    final current = state.user;
+    if (current == null) return;
+    final updated = current.copyWith(streak: days);
+    state = state.copyWith(user: updated, isLoggedIn: true);
+    await _persist(updated, previous: current);
+  }
+
+  /// Write [user] and roll the state back to [previous] if the write fails.
+  Future<bool> _persist(UserModel user, {required UserModel previous}) async {
+    try {
+      await _repo.updateUser(user);
+      if (mounted) state = state.copyWith(syncError: null);
+      return true;
+    } catch (_) {
+      if (!mounted) return false;
+      state = state.copyWith(
+        user: previous,
+        isLoggedIn: true,
+        syncError: 'Perubahan gagal disimpan. Periksa koneksi internet.',
+      );
+      return false;
+    }
   }
 
   /// Perbarui streak harian berdasarkan tanggal aktivitas terakhir.
@@ -210,35 +305,40 @@ class AuthNotifier extends StateNotifier<AuthState> {
         localA.day != localB.day;
   }
 
-  void toggleDarkMode() {
-    if (state.user == null) return;
-    final s = state.user!.settings;
-    state = state.copyWith(
-      user: state.user!.copyWith(settings: s.copyWith(darkMode: !s.darkMode)),
-      isLoggedIn: true,
+  Future<void> toggleDarkMode() =>
+      _updateSettings((s) => s.copyWith(darkMode: !s.darkMode));
+
+  Future<void> toggleAudio() =>
+      _updateSettings((s) => s.copyWith(audioEnabled: !s.audioEnabled));
+
+  Future<void> toggleMusic() =>
+      _updateSettings((s) => s.copyWith(musicEnabled: !s.musicEnabled));
+
+  /// Explicitly set the audio preferences (used by the audio provider so the
+  /// switch on screen, the player, and the database never disagree).
+  Future<void> setAudioPreferences({bool? sfxEnabled, bool? musicEnabled}) {
+    return _updateSettings(
+      (s) => s.copyWith(audioEnabled: sfxEnabled, musicEnabled: musicEnabled),
     );
   }
 
-  void toggleAudio() {
-    if (state.user == null) return;
-    final s = state.user!.settings;
-    state = state.copyWith(
-      user: state.user!.copyWith(
-        settings: s.copyWith(audioEnabled: !s.audioEnabled),
-      ),
-      isLoggedIn: true,
-    );
-  }
-
-  void toggleMusic() {
-    if (state.user == null) return;
-    final s = state.user!.settings;
-    state = state.copyWith(
-      user: state.user!.copyWith(
-        settings: s.copyWith(musicEnabled: !s.musicEnabled),
-      ),
-      isLoggedIn: true,
-    );
+  /// Apply a settings change locally **and** persist it, rolling back on error.
+  Future<void> _updateSettings(
+    UserSettings Function(UserSettings current) transform,
+  ) async {
+    final current = state.user;
+    if (current == null) return;
+    final next = transform(current.settings);
+    if (next.darkMode == current.settings.darkMode &&
+        next.audioEnabled == current.settings.audioEnabled &&
+        next.musicEnabled == current.settings.musicEnabled &&
+        next.language == current.settings.language) {
+      return;
+    }
+    final updated = current.copyWith(settings: next);
+    state = state.copyWith(user: updated, isLoggedIn: true);
+    if (current.role == 'admin') return; // admin is a local-only account
+    await _persist(updated, previous: current);
   }
 
   /// Reset XP, level, streak, dan badge profil seperti pengguna baru.
@@ -260,6 +360,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   void logout() {
+    _unbindUserStream();
     _repo.logout();
     state = const AuthState();
   }

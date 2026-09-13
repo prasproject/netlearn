@@ -1,204 +1,674 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../core/constants/app_colors.dart';
+import '../../core/constants/app_dimensions.dart';
+import '../../core/constants/app_motion.dart';
+import '../../core/constants/app_shadows.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../core/widgets/gradient_button.dart';
 import '../../core/widgets/header_back_button.dart';
+import '../../core/widgets/loading_views.dart';
+import '../../core/widgets/pressable.dart';
 import '../../data/models/simulation_model.dart';
-import '../../domain/providers/simulation_provider.dart';
 import '../../domain/providers/audio_provider.dart';
 import '../../domain/providers/progress_provider.dart';
+import '../../domain/providers/simulation_provider.dart';
+import 'iso_canvas.dart';
+import 'simulation_missions.dart';
 import 'simulation_tutorial_panel.dart';
 
-/// Interactive network simulation screen with drag-drop nodes and packet animation.
-class SimulationScreen extends ConsumerWidget {
+/// Interactive 2.5D network simulation.
+///
+/// The routing engine (cables, IP rules, BFS path finding) already lived in
+/// `SimulationNotifier`; most of it had no controls in the UI at all. This
+/// screen exposes the whole toolset on an isometric canvas the student can
+/// pan, zoom, and rotate, with a guided mission list that ticks itself off.
+class SimulationScreen extends ConsumerStatefulWidget {
   const SimulationScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<SimulationScreen> createState() => _SimulationScreenState();
+}
+
+class _SimulationScreenState extends ConsumerState<SimulationScreen> with TickerProviderStateMixin {
+  // Idle clock driving blinking LEDs, flowing link dots and pulsing rings.
+  late final AnimationController _clock = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 4),
+  )..repeat();
+
+  IsoCamera _camera = const IsoCamera();
+  MissionStats _stats = const MissionStats();
+
+  String? _selectedNodeId;
+  bool _cableArmed = false;
+  bool _showGrid = true;
+  bool _missionsOpen = true;
+  int _dockTab = 0;
+
+  // Gesture bookkeeping
+  String? _draggingNodeId;
+  IsoCamera _gestureStartCamera = const IsoCamera();
+  Size _canvasSize = Size.zero;
+
+  final _ipController = TextEditingController();
+
+  @override
+  void dispose() {
+    _clock.dispose();
+    _ipController.dispose();
+    super.dispose();
+  }
+
+  bool get _isPlayground => ref.read(simulationProvider).simulation.id == 'sim-playground';
+
+  // ─── Mission tracking ───
+
+  void _watchForMissionProgress() {
+    ref.listen<SimulationState>(simulationProvider, (previous, next) {
+      if (previous == null) return;
+      var stats = _stats;
+
+      if (next.simulation.nodes.length > previous.simulation.nodes.length) {
+        stats = stats.copyWith(devicesAdded: stats.devicesAdded + 1);
+      }
+      if (next.simulation.connections.length > previous.simulation.connections.length) {
+        stats = stats.copyWith(
+          linksCreated: stats.linksCreated + 1,
+          cablesUsed: {...stats.cablesUsed, next.activeCableType},
+        );
+      }
+      // A finished send reports success in the status line.
+      final finished = previous.isAnimating && !next.isAnimating;
+      if (finished && next.statusMessage.contains('✓')) {
+        stats = stats.copyWith(successfulSends: stats.successfulSends + 1);
+        ref.read(progressProvider.notifier).completeSimulation();
+      }
+      if (next.selectedPath.join() != previous.selectedPath.join() &&
+          !next.isAnimating &&
+          next.simulation.id == previous.simulation.id) {
+        stats = stats.copyWith(routeChanges: stats.routeChanges + 1);
+      }
+      if (next.simulation.id != previous.simulation.id) {
+        // A new scenario starts its own walkthrough.
+        stats = const MissionStats();
+        _selectedNodeId = null;
+        _camera = const IsoCamera();
+      }
+
+      if (stats != _stats) setState(() => _stats = stats);
+    });
+  }
+
+  List<SimMission> get _missions =>
+      SimulationMissions.forSimulation(ref.read(simulationProvider).simulation.id);
+
+  int get _currentMissionIndex {
+    final state = ref.read(simulationProvider);
+    final missions = _missions;
+    for (var i = 0; i < missions.length; i++) {
+      if (!missions[i].isDone(state, _stats)) return i;
+    }
+    return missions.length;
+  }
+
+  // ─── Gestures ───
+
+  void _onScaleStart(ScaleStartDetails details) {
+    final sim = ref.read(simulationProvider);
+    _gestureStartCamera = _camera;
+
+    if (details.pointerCount == 1) {
+      final node = hitTestNode(
+        localPosition: details.localFocalPoint,
+        simulation: sim.simulation,
+        size: _canvasSize,
+        camera: _camera,
+      );
+      _draggingNodeId = node?.id;
+      return;
+    }
+    _draggingNodeId = null;
+  }
+
+  void _onScaleUpdate(ScaleUpdateDetails details) {
+    if (_draggingNodeId != null && details.pointerCount == 1) {
+      // Dragging a device follows the finger along the tilted floor.
+      final projection = IsoProjection(size: _canvasSize, camera: _camera);
+      final delta = projection.unprojectDelta(details.focalPointDelta);
+      ref.read(simulationProvider.notifier).moveNode(_draggingNodeId!, delta.dx, delta.dy);
+      _markViewExplored();
+      return;
+    }
+
+    setState(() {
+      _camera = _camera.copyWith(
+        pan: _camera.pan + details.focalPointDelta,
+        zoom: _gestureStartCamera.zoom * details.scale,
+        rotation: _gestureStartCamera.rotation + details.rotation,
+      );
+    });
+    _markViewExplored();
+  }
+
+  void _onTapUp(TapUpDetails details) {
+    final sim = ref.read(simulationProvider);
+    final node = hitTestNode(
+      localPosition: details.localPosition,
+      simulation: sim.simulation,
+      size: _canvasSize,
+      camera: _camera,
+    );
+
+    if (node == null) {
+      setState(() => _selectedNodeId = null);
+      return;
+    }
+
+    ref.read(audioProvider.notifier).playSfx(SoundEffect.buttonTap);
+    setState(() {
+      _selectedNodeId = node.id;
+      _ipController.text = node.ipAddress;
+      _stats = _stats.copyWith(nodesInspected: _stats.nodesInspected + 1);
+    });
+
+    if (_cableArmed) {
+      ref.read(simulationProvider.notifier).handleNodeTap(node.id);
+    }
+  }
+
+  void _nudgeCamera({double rotate = 0, double zoom = 1}) {
+    setState(() {
+      _camera = _camera.copyWith(rotation: _camera.rotation + rotate, zoom: _camera.zoom * zoom);
+    });
+    _markViewExplored();
+  }
+
+  /// Anything that counts as "looking around the network": panning, zooming,
+  /// rotating, toggling the floor grid, recentring, or dragging a device.
+  ///
+  /// The first guided step used to accept only a pan/zoom gesture, which on a
+  /// desktop browser was easy to miss entirely — a mouse drag usually grabs a
+  /// device instead, and the wheel did nothing — so the checklist could sit on
+  /// step 1 forever.
+  void _markViewExplored() {
+    if (_stats.cameraMoved) return;
+    setState(() => _stats = _stats.copyWith(cameraMoved: true));
+  }
+
+  /// Mouse-wheel / trackpad zoom, so the canvas behaves like a map in the web
+  /// build where there is no pinch gesture.
+  void _onPointerSignal(PointerSignalEvent event) {
+    if (event is! PointerScrollEvent) return;
+    final factor = event.scrollDelta.dy > 0 ? 0.92 : 1.08;
+    setState(() => _camera = _camera.copyWith(zoom: _camera.zoom * factor));
+    _markViewExplored();
+  }
+
+  // ─── Build ───
+
+  @override
+  Widget build(BuildContext context) {
+    _watchForMissionProgress();
     final sim = ref.watch(simulationProvider);
+
+    if (!sim.isLoaded) {
+      return const Scaffold(
+        backgroundColor: AppColors.background,
+        body: AppLoader(message: 'Menyiapkan simulasi...', color: AppColors.secondaryGreen),
+      );
+    }
+
+    final selected = _selectedNodeId == null
+        ? null
+        : sim.simulation.nodes
+              .where((n) => n.id == _selectedNodeId)
+              .cast<NetworkNode?>()
+              .firstWhere((n) => true, orElse: () => null);
+
     return Scaffold(
+      backgroundColor: AppColors.background,
       body: Column(
         children: [
-          // Green Header
-          Container(
-            decoration: const BoxDecoration(color: AppColors.secondaryGreen),
-            child: SafeArea(
-              bottom: false,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
-                child: Column(
-                  children: [
-                    Row(
-                      children: [
-                        const HeaderBackButton(),
-                        const SizedBox(width: 10),
-                        Expanded(child: Text('Simulasi Jaringan', style: AppTextStyles.sectionTitle)),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(99),
+          _header(sim),
+          _goalBanner(sim),
+          Expanded(child: _canvas(sim)),
+          if (selected != null) _inspector(sim, selected),
+          _dock(sim),
+        ],
+      ),
+    );
+  }
+
+  // ─── Header ───
+
+  Widget _header(SimulationState sim) {
+    return Container(
+      decoration: BoxDecoration(color: AppColors.secondaryGreen, boxShadow: AppShadows.card),
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 4, 12, 10),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  const HeaderBackButton(),
+                  const SizedBox(width: 10),
+                  Expanded(child: Text('Simulasi Jaringan', style: AppTextStyles.sectionTitle)),
+                  Pressable(
+                    onTap: () => SimulationTutorialPanel.showPopup(context, sim.simulation.id),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.18),
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.menu_book_rounded, size: 13, color: Colors.white),
+                          const SizedBox(width: 5),
+                          Text(
+                            'Petunjuk',
+                            style: AppTextStyles.labelTiny.copyWith(color: Colors.white),
                           ),
-                          child: Text(
-                            'Interaktif',
-                            style: AppTextStyles.labelTiny.copyWith(color: AppColors.secondaryGreenAccent),
-                          ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      height: 36,
-                      child: ListView.separated(
-                        scrollDirection: Axis.horizontal,
-                        itemCount: sim.allSimulations.length,
-                        separatorBuilder: (context, index) => const SizedBox(width: 8),
-                        itemBuilder: (context, index) {
-                          final s = sim.allSimulations[index];
-                          final isSelected = s.id == sim.simulation.id;
-                          return GestureDetector(
-                            onTap: () {
-                              ref.read(audioProvider.notifier).playSfx(SoundEffect.buttonTap);
-                              ref.read(simulationProvider.notifier).setSimulation(s.id);
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                              decoration: BoxDecoration(
-                                color: isSelected ? Colors.white : Colors.white.withValues(alpha: 0.15),
-                                borderRadius: BorderRadius.circular(99),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                height: 34,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: sim.allSimulations.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  itemBuilder: (context, index) {
+                    final s = sim.allSimulations[index];
+                    final isSelected = s.id == sim.simulation.id;
+                    return Pressable(
+                      onTap: () {
+                        ref.read(audioProvider.notifier).playSfx(SoundEffect.buttonTap);
+                        ref.read(simulationProvider.notifier).setSimulation(s.id);
+                        setState(() {
+                          _selectedNodeId = null;
+                          _cableArmed = false;
+                        });
+                      },
+                      child: AnimatedContainer(
+                        duration: AppMotion.fast,
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: isSelected ? Colors.white : Colors.white.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(99),
+                        ),
+                        child: Row(
+                          children: [
+                            if (s.id == 'sim-playground') ...[
+                              Icon(
+                                Icons.science_rounded,
+                                size: 13,
+                                color: isSelected ? AppColors.secondaryGreen : Colors.white,
                               ),
-                              child: Center(
-                                child: Text(s.title, style: AppTextStyles.labelSmall.copyWith(
-                                  color: isSelected ? AppColors.secondaryGreen : Colors.white,
-                                )),
+                              const SizedBox(width: 5),
+                            ],
+                            Text(
+                              s.title,
+                              style: AppTextStyles.labelSmall.copyWith(
+                                color: isSelected ? AppColors.secondaryGreen : Colors.white,
                               ),
                             ),
-                          );
-                        },
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(8)),
-                      child: Text(sim.simulation.task, style: AppTextStyles.bodySmall.copyWith(color: Colors.white.withValues(alpha: 0.85))),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          // Canvas
-          Expanded(
-            child: Container(
-              color: AppColors.secondaryGreenSurface,
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  return Stack(
-                    children: [
-                      // Connection lines
-                      CustomPaint(
-                        size: Size(constraints.maxWidth, constraints.maxHeight),
-                        painter: _ConnectionPainter(
-                          sim.simulation,
-                          sim.selectedPath,
+                          ],
                         ),
                       ),
-                      // Packet animation
-                      if (sim.packetProgress >= 0 && sim.packetProgress < sim.selectedPath.length)
-                        _buildPacket(sim, constraints),
-                      // Nodes
-                      ...sim.simulation.nodes.map((node) => _buildNode(context, ref, sim, node, constraints)),
-                      // Status bar
-                      Positioned(
-                        bottom: 12, left: 12, right: 12,
-                        child: Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.92),
-                            borderRadius: BorderRadius.circular(10),
-                            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 8)],
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(sim.statusMessage, style: AppTextStyles.bodySmall.copyWith(color: AppColors.secondaryGreen, fontWeight: FontWeight.w700)),
-                              if (sim.detailMessage != null) ...[
-                                const SizedBox(height: 2),
-                                Text(sim.detailMessage!, style: AppTextStyles.labelSmall),
-                              ],
-                            ],
-                          ),
-                        ).animate().fadeIn(),
-                      ),
-                    ],
-                  );
-                },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// The scenario's objective, stated plainly and always on screen.
+  Widget _goalBanner(SimulationState sim) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: AppColors.secondaryGreenSurface,
+        borderRadius: BorderRadius.circular(AppDimensions.radiusLarge),
+        border: Border.all(color: AppColors.secondaryGreenAccent),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.flag_rounded, size: 16, color: AppColors.secondaryGreen),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              sim.simulation.task,
+              style: AppTextStyles.labelSmall.copyWith(
+                color: AppColors.secondaryGreenDark,
+                height: 1.35,
               ),
             ),
           ),
-          // Controls
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              border: Border(top: BorderSide(color: AppColors.divider)),
+        ],
+      ),
+    );
+  }
+
+  // ─── Canvas ───
+
+  Widget _canvas(SimulationState sim) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        _canvasSize = Size(constraints.maxWidth, constraints.maxHeight);
+        return ClipRect(
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: Listener(
+                  onPointerSignal: _onPointerSignal,
+                  child: GestureDetector(
+                    onScaleStart: _onScaleStart,
+                    onScaleUpdate: _onScaleUpdate,
+                    onScaleEnd: (_) => _draggingNodeId = null,
+                    onTapUp: _onTapUp,
+                    child: AnimatedBuilder(
+                      animation: _clock,
+                      builder: (context, _) {
+                        // The packet slides smoothly between hops instead of
+                        // teleporting when the notifier advances a step.
+                        return TweenAnimationBuilder<double>(
+                          tween: Tween(
+                            begin: sim.packetProgress.toDouble(),
+                            end: sim.packetProgress.toDouble(),
+                          ),
+                          duration: const Duration(milliseconds: 520),
+                          curve: Curves.easeInOut,
+                          builder: (context, packet, __) => CustomPaint(
+                            size: _canvasSize,
+                            painter: IsoScenePainter(
+                              simulation: sim.simulation,
+                              camera: _camera,
+                              cableByLinkKey: sim.cableByLinkKey,
+                              activePath: sim.selectedPath,
+                              packetProgress: sim.packetProgress < 0 ? -1 : packet,
+                              time: _clock.value,
+                              selectedNodeId: _selectedNodeId,
+                              connectStartNodeId: sim.connectStartNodeId,
+                              sourceNodeId: sim.packetSourceNodeId,
+                              targetNodeId: sim.packetTargetNodeId,
+                              showGrid: _showGrid,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(left: 12, top: 12, right: 64, child: _missionCard(sim)),
+              Positioned(right: 12, top: 12, child: _cameraTools()),
+              Positioned(left: 12, right: 12, bottom: 12, child: _statusBar(sim)),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _cameraTools() {
+    Widget tool(IconData icon, VoidCallback onTap, {String? tooltip}) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Tooltip(
+          message: tooltip ?? '',
+          child: Pressable(
+            onTap: onTap,
+            child: Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.cardBorder),
+                boxShadow: AppShadows.card,
+              ),
+              child: Icon(icon, size: 18, color: AppColors.secondaryGreen),
             ),
-            child: Column(
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        tool(Icons.rotate_left_rounded, () => _nudgeCamera(rotate: -0.35), tooltip: 'Putar kiri'),
+        tool(Icons.rotate_right_rounded, () => _nudgeCamera(rotate: 0.35), tooltip: 'Putar kanan'),
+        tool(Icons.zoom_in_rounded, () => _nudgeCamera(zoom: 1.2), tooltip: 'Perbesar'),
+        tool(Icons.zoom_out_rounded, () => _nudgeCamera(zoom: 0.83), tooltip: 'Perkecil'),
+        tool(_showGrid ? Icons.grid_on_rounded : Icons.grid_off_rounded, () {
+          setState(() => _showGrid = !_showGrid);
+          _markViewExplored();
+        }, tooltip: 'Garis lantai'),
+        tool(Icons.center_focus_strong_rounded, () {
+          setState(() => _camera = const IsoCamera());
+          _markViewExplored();
+        }, tooltip: 'Kembalikan tampilan'),
+      ],
+    );
+  }
+
+  // ─── Mission checklist ───
+
+  Widget _missionCard(SimulationState sim) {
+    final missions = _missions;
+    final index = _currentMissionIndex;
+    final allDone = index >= missions.length;
+
+    return AnimatedContainer(
+      duration: AppMotion.normal,
+      curve: AppMotion.enter,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.96),
+        borderRadius: BorderRadius.circular(AppDimensions.radiusXL),
+        border: Border.all(
+          color: allDone ? AppColors.secondaryGreenLight : AppColors.secondaryGreenAccent,
+        ),
+        boxShadow: AppShadows.card,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Pressable(
+            onTap: () => setState(() => _missionsOpen = !_missionsOpen),
+            child: Row(
               children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: GradientButton(
-                        text: sim.isAnimating ? 'Mengirim...' : 'Kirim Paket',
-                        backgroundColor: AppColors.secondaryGreen,
-                        shadowColor: AppColors.secondaryGreenDark,
-                        onPressed: sim.isAnimating ? null : () {
-                          ref.read(audioProvider.notifier).playSfx(SoundEffect.packetSend);
-                          ref.read(simulationProvider.notifier).sendPacket().then((success) {
-                            if (!success) return;
-                            ref.read(audioProvider.notifier).playSfx(SoundEffect.packetArrive);
-                            ref.read(progressProvider.notifier).completeSimulation();
-                          });
-                        },
-                        padding: const EdgeInsets.symmetric(vertical: 12),
+                Icon(
+                  allDone ? Icons.emoji_events_rounded : missions[index].icon,
+                  size: 16,
+                  color: allDone ? AppColors.gold : AppColors.secondaryGreen,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    allDone
+                        ? 'Semua langkah selesai 🎉'
+                        : 'Langkah ${index + 1}/${missions.length}: ${missions[index].title}',
+                    style: AppTextStyles.labelSmall.copyWith(
+                      color: AppColors.textPrimary,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                Icon(
+                  _missionsOpen
+                      ? Icons.keyboard_arrow_up_rounded
+                      : Icons.keyboard_arrow_down_rounded,
+                  size: 18,
+                  color: AppColors.textMuted,
+                ),
+              ],
+            ),
+          ),
+          AnimatedCrossFade(
+            duration: AppMotion.normal,
+            crossFadeState: _missionsOpen ? CrossFadeState.showFirst : CrossFadeState.showSecond,
+            firstChild: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 8),
+                if (!allDone) ...[
+                  Text(
+                    missions[index].hint,
+                    style: AppTextStyles.labelSmall.copyWith(
+                      color: AppColors.textSecondary,
+                      height: 1.45,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Pressable(
+                    onTap: () => _openTab(missions[index].tab),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                      decoration: BoxDecoration(
+                        color: AppColors.secondaryGreen,
+                        borderRadius: BorderRadius.circular(9),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Flexible: a long action label must not overflow the
+                          // card on a narrow phone.
+                          Flexible(
+                            child: Text(
+                              missions[index].action,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTextStyles.labelTiny.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 5),
+                          const Icon(Icons.arrow_forward_rounded, size: 12, color: Colors.white),
+                        ],
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    _controlIconButton(
-                      icon: Icons.shuffle_rounded,
-                      onTap: () {
-                        ref.read(audioProvider.notifier).playSfx(SoundEffect.buttonTap);
-                        ref.read(simulationProvider.notifier).togglePath();
-                      },
+                  ),
+                ] else
+                  Text(
+                    'Kamu sudah mencoba seluruh alur simulasi ini. Coba topologi lain, atau rancang jaringanmu sendiri di Lab Bebas.',
+                    style: AppTextStyles.labelSmall.copyWith(
+                      color: AppColors.textSecondary,
+                      height: 1.45,
                     ),
-                    const SizedBox(width: 8),
-                    _controlIconButton(
-                      icon: Icons.refresh_rounded,
-                      onTap: () {
-                        ref.read(audioProvider.notifier).playSfx(SoundEffect.buttonTap);
-                        ref.read(simulationProvider.notifier).reset();
-                      },
-                    ),
-                    const SizedBox(width: 8),
-                    _controlIconButton(
-                      icon: Icons.info_outline_rounded,
-                      onTap: () {
-                        ref.read(audioProvider.notifier).playSfx(SoundEffect.buttonTap);
-                        SimulationTutorialPanel.showPopup(context, sim.simulation.id);
-                      },
-                    ),
+                  ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    for (var i = 0; i < missions.length; i++)
+                      Expanded(
+                        child: AnimatedContainer(
+                          duration: AppMotion.normal,
+                          height: 5,
+                          margin: const EdgeInsets.only(right: 3),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(99),
+                            color: missions[i].isDone(sim, _stats)
+                                ? AppColors.secondaryGreenLight
+                                : AppColors.divider,
+                          ),
+                        ),
+                      ),
                   ],
                 ),
-                const SizedBox(height: 6),
+              ],
+            ),
+            secondChild: const SizedBox(width: double.infinity),
+          ),
+        ],
+      ),
+    ).animate().fadeIn(duration: AppMotion.normal);
+  }
+
+  /// Jump to the controls a mission refers to.
+  void _openTab(SimDockTab tab) {
+    if (tab == SimDockTab.canvas) {
+      // Nothing to open — the action happens on the canvas itself.
+      setState(() => _missionsOpen = true);
+      return;
+    }
+    final index = switch (tab) {
+      SimDockTab.build => _isPlayground ? 0 : 0,
+      SimDockTab.send => _isPlayground ? 1 : 0,
+      SimDockTab.layout => _isPlayground ? 2 : 1,
+      SimDockTab.canvas => _dockTab,
+    };
+    ref.read(audioProvider.notifier).playSfx(SoundEffect.buttonTap);
+    setState(() => _dockTab = index);
+  }
+
+  // ─── Status ───
+
+  Widget _statusBar(SimulationState sim) {
+    final isError = sim.statusMessage.toLowerCase().contains('gagal');
+    final isSuccess = sim.statusMessage.contains('✓');
+    final color = isError
+        ? AppColors.error
+        : isSuccess
+        ? AppColors.secondaryGreen
+        : AppColors.textSecondary;
+
+    return AnimatedContainer(
+      duration: AppMotion.normal,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.95),
+        borderRadius: BorderRadius.circular(AppDimensions.radiusLarge),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+        boxShadow: AppShadows.card,
+      ),
+      child: Row(
+        children: [
+          Icon(
+            isError
+                ? Icons.error_outline_rounded
+                : isSuccess
+                ? Icons.check_circle_rounded
+                : Icons.info_outline_rounded,
+            size: 16,
+            color: color,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 Text(
-                  'Tombol acak (shuffle) untuk ganti rute',
-                  style: AppTextStyles.labelSmall.copyWith(color: AppColors.textMuted),
-                  textAlign: TextAlign.center,
+                  sim.statusMessage,
+                  style: AppTextStyles.labelSmall.copyWith(
+                    color: color,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
+                if (sim.detailMessage != null)
+                  Text(
+                    sim.detailMessage!,
+                    style: AppTextStyles.labelTiny.copyWith(color: AppColors.textMuted),
+                  ),
               ],
             ),
           ),
@@ -207,141 +677,545 @@ class SimulationScreen extends ConsumerWidget {
     );
   }
 
-  Widget _controlIconButton({required IconData icon, required VoidCallback onTap}) {
-    return GestureDetector(
+  // ─── Node inspector ───
+
+  Widget _inspector(SimulationState sim, NetworkNode node) {
+    final isSource = sim.packetSourceNodeId == node.id;
+    final isTarget = sim.packetTargetNodeId == node.id;
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(AppDimensions.radiusXL),
+        border: Border.all(color: AppColors.cardBorder),
+        boxShadow: AppShadows.raised,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(_iconFor(node.type), size: 18, color: AppColors.secondaryGreen),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '${node.label} · ${_typeLabel(node.type)}',
+                  style: AppTextStyles.cardTitleDark,
+                ),
+              ),
+              Pressable(
+                onTap: () => setState(() => _selectedNodeId = null),
+                child: const Icon(Icons.close_rounded, size: 18, color: AppColors.textMuted),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: SizedBox(
+                  height: 40,
+                  child: TextField(
+                    controller: _ipController,
+                    style: AppTextStyles.bodySmall,
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                      isDense: true,
+                      labelText: 'Alamat IP',
+                      labelStyle: AppTextStyles.labelTiny,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    onSubmitted: (_) => _saveIp(node),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Pressable(
+                onTap: () => _saveIp(node),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                  decoration: BoxDecoration(
+                    color: AppColors.secondaryGreen,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text('Simpan', style: AppTextStyles.buttonSmall),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _chipButton(
+                  label: isSource ? 'Pengirim ✓' : 'Jadikan pengirim',
+                  color: AppColors.primaryBlue,
+                  active: isSource,
+                  onTap: () =>
+                      ref.read(simulationProvider.notifier).setPacketEndpoints(sourceId: node.id),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _chipButton(
+                  label: isTarget ? 'Tujuan ✓' : 'Jadikan tujuan',
+                  color: AppColors.accentOrange,
+                  active: isTarget,
+                  onTap: () =>
+                      ref.read(simulationProvider.notifier).setPacketEndpoints(targetId: node.id),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    ).animate().fadeIn(duration: AppMotion.fast).slideY(begin: 0.15);
+  }
+
+  void _saveIp(NetworkNode node) {
+    final value = _ipController.text.trim();
+    if (value.isEmpty || value == node.ipAddress) return;
+    ref.read(simulationProvider.notifier).updateNodeIp(node.id, value);
+    setState(() => _stats = _stats.copyWith(ipEdits: _stats.ipEdits + 1));
+    FocusScope.of(context).unfocus();
+  }
+
+  Widget _chipButton({
+    required String label,
+    required Color color,
+    required bool active,
+    required VoidCallback onTap,
+  }) {
+    return Pressable(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: AppMotion.fast,
+        padding: const EdgeInsets.symmetric(vertical: 9),
+        decoration: BoxDecoration(
+          color: active ? color : color.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: color.withValues(alpha: 0.4)),
+        ),
+        child: Center(
+          child: Text(
+            label,
+            style: AppTextStyles.labelSmall.copyWith(
+              color: active ? Colors.white : color,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ─── Bottom dock ───
+
+  Widget _dock(SimulationState sim) {
+    final tabs = _isPlayground
+        ? const ['1. Bangun', '2. Kirim', 'Tampilan']
+        : const ['Kirim Paket', 'Tampilan'];
+    final tab = _dockTab.clamp(0, tabs.length - 1);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: AppShadows.overlay,
+        border: const Border(top: BorderSide(color: AppColors.divider)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  for (var i = 0; i < tabs.length; i++)
+                    Expanded(
+                      child: Pressable(
+                        onTap: () => setState(() => _dockTab = i),
+                        child: AnimatedContainer(
+                          duration: AppMotion.fast,
+                          margin: const EdgeInsets.symmetric(horizontal: 3),
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          decoration: BoxDecoration(
+                            color: i == tab
+                                ? AppColors.secondaryGreen
+                                : AppColors.secondaryGreenSurface,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Center(
+                            child: Text(
+                              tabs[i],
+                              style: AppTextStyles.labelSmall.copyWith(
+                                color: i == tab ? Colors.white : AppColors.secondaryGreen,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              AnimatedSize(
+                duration: AppMotion.normal,
+                curve: AppMotion.enter,
+                child: _isPlayground
+                    ? switch (tab) {
+                        0 => _buildTools(sim),
+                        1 => _sendTools(sim),
+                        _ => _layoutTools(sim),
+                      }
+                    : switch (tab) {
+                        0 => _sendTools(sim),
+                        _ => _layoutTools(sim),
+                      },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTools(SimulationState sim) {
+    return Column(
+      key: const ValueKey('build'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _tabHint(
+          'Susun jaringanmu: tambahkan perangkat, lalu pilih kabel dan ketuk '
+          'dua perangkat untuk menyambungkannya.',
+        ),
+        Text('Tambah perangkat', style: AppTextStyles.labelTiny),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            _toolChip(
+              Icons.computer_rounded,
+              'PC',
+              AppColors.primaryBlue,
+              () => _addNode(NodeType.pc),
+            ),
+            _toolChip(
+              Icons.device_hub_rounded,
+              'Switch',
+              AppColors.purple,
+              () => _addNode(NodeType.switchDevice),
+            ),
+            _toolChip(
+              Icons.router_rounded,
+              'Router',
+              AppColors.secondaryGreen,
+              () => _addNode(NodeType.router),
+            ),
+            _toolChip(
+              Icons.dns_rounded,
+              'Server',
+              AppColors.accentOrange,
+              () => _addNode(NodeType.server),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Text('Kabel', style: AppTextStyles.labelTiny),
+            const SizedBox(width: 8),
+            if (_cableArmed)
+              Text(
+                sim.connectStartNodeId == null
+                    ? '— ketuk perangkat pertama'
+                    : '— ketuk perangkat kedua',
+                style: AppTextStyles.labelTiny.copyWith(color: AppColors.accentOrange),
+              ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            for (final type in CableType.values)
+              Expanded(
+                child: Pressable(
+                  onTap: () {
+                    ref.read(simulationProvider.notifier).setCableType(type);
+                    setState(() => _cableArmed = true);
+                  },
+                  child: AnimatedContainer(
+                    duration: AppMotion.fast,
+                    margin: const EdgeInsets.only(right: 6),
+                    padding: const EdgeInsets.symmetric(vertical: 9),
+                    decoration: BoxDecoration(
+                      color: _cableArmed && sim.activeCableType == type
+                          ? cableColor(type)
+                          : cableColor(type).withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: cableColor(type).withValues(alpha: 0.5)),
+                    ),
+                    child: Center(
+                      child: Text(
+                        _cableLabel(type),
+                        style: AppTextStyles.labelSmall.copyWith(
+                          color: _cableArmed && sim.activeCableType == type
+                              ? Colors.white
+                              : AppColors.textSecondary,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            Pressable(
+              onTap: () => setState(() => _cableArmed = false),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+                decoration: BoxDecoration(
+                  color: AppColors.postSurface,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.pan_tool_alt_rounded,
+                  size: 16,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _sendTools(SimulationState sim) {
+    final source = _labelOf(sim, sim.packetSourceNodeId);
+    final target = _labelOf(sim, sim.packetTargetNodeId);
+
+    return Column(
+      key: const ValueKey('send'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _tabHint(
+          _isPlayground
+              ? 'Tentukan pengirim dan tujuan, lalu kirim paket. Kalau gagal, '
+                    'pesan di kanvas menjelaskan sebabnya.'
+              : 'Kabel yang menyala tebal adalah rute yang akan dilewati paket. '
+                    'Ganti rute dengan tombol acak, lalu tekan Kirim Paket.',
+        ),
+        if (_isPlayground) ...[
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Pengirim: $source  →  Tujuan: $target',
+                  style: AppTextStyles.labelTiny.copyWith(color: AppColors.textSecondary),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Ketuk perangkat di kanvas untuk mengganti pengirim/tujuan.',
+            style: AppTextStyles.labelTiny.copyWith(color: AppColors.textMuted),
+          ),
+          const SizedBox(height: 8),
+        ],
+        Row(
+          children: [
+            Expanded(
+              child: GradientButton(
+                text: sim.isAnimating ? 'Mengirim...' : 'Kirim Paket',
+                icon: Icons.send_rounded,
+                backgroundColor: AppColors.secondaryGreen,
+                shadowColor: AppColors.secondaryGreenDark,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                onPressed: sim.isAnimating ? null : _sendPacket,
+              ),
+            ),
+            if (!_isPlayground) ...[
+              const SizedBox(width: 8),
+              _iconButton(Icons.shuffle_rounded, 'Rute', () {
+                ref.read(audioProvider.notifier).playSfx(SoundEffect.buttonTap);
+                ref.read(simulationProvider.notifier).togglePath();
+              }),
+            ],
+            const SizedBox(width: 8),
+            _iconButton(Icons.refresh_rounded, 'Ulangi', () {
+              ref.read(audioProvider.notifier).playSfx(SoundEffect.buttonTap);
+              ref.read(simulationProvider.notifier).reset();
+            }),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _layoutTools(SimulationState sim) {
+    return Column(
+      key: const ValueKey('layout'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _tabHint('Atur sudut pandang kanvas supaya jaringan lebih mudah dibaca.'),
+        Text(
+          'Seret perangkat di kanvas untuk memindahkannya. Cubit untuk memperbesar, '
+          'putar dengan dua jari, atau pakai tombol di kanan kanvas.',
+          style: AppTextStyles.labelSmall.copyWith(color: AppColors.textSecondary, height: 1.4),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: _chipButton(
+                label: _showGrid ? 'Sembunyikan garis' : 'Tampilkan garis',
+                color: AppColors.secondaryGreen,
+                active: _showGrid,
+                onTap: () {
+                  setState(() => _showGrid = !_showGrid);
+                  _markViewExplored();
+                },
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _chipButton(
+                label: 'Kembalikan tampilan',
+                color: AppColors.primaryBlue,
+                active: false,
+                onTap: () {
+                  setState(() => _camera = const IsoCamera());
+                  _markViewExplored();
+                },
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _tabHint(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.lightbulb_rounded, size: 14, color: AppColors.accentOrangeLight),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              text,
+              style: AppTextStyles.labelTiny.copyWith(color: AppColors.textSecondary, height: 1.35),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _toolChip(IconData icon, String label, Color color, VoidCallback onTap) {
+    return Expanded(
+      child: Pressable(
+        onTap: onTap,
+        child: Container(
+          margin: const EdgeInsets.only(right: 6),
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: color.withValues(alpha: 0.35)),
+          ),
+          child: Column(
+            children: [
+              Icon(icon, size: 18, color: color),
+              const SizedBox(height: 3),
+              Text(
+                label,
+                style: AppTextStyles.labelTiny.copyWith(color: color, fontWeight: FontWeight.w800),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _iconButton(IconData icon, String label, VoidCallback onTap) {
+    // Labelled, not tooltip-only: on a touch screen a tooltip never appears,
+    // so the shuffle and reset buttons read as mystery icons.
+    return Pressable(
       onTap: onTap,
       child: Container(
-        width: 44,
-        height: 44,
+        width: 62,
+        padding: const EdgeInsets.symmetric(vertical: 6),
         decoration: BoxDecoration(
           color: AppColors.secondaryGreenSurface,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: AppColors.secondaryGreenAccent, width: 1.5),
         ),
-        child: Icon(icon, color: AppColors.secondaryGreen, size: 20),
-      ),
-    );
-  }
-
-  Widget _buildNode(BuildContext context, WidgetRef ref, SimulationState sim, NetworkNode node, BoxConstraints constraints) {
-    final colors = _nodeColors(node.type);
-    final isConnectStart = sim.connectStartNodeId == node.id;
-    return Positioned(
-      left: node.x * constraints.maxWidth,
-      top: node.y * constraints.maxHeight,
-      child: GestureDetector(
-        onPanUpdate: (details) {
-          final dx = details.delta.dx / constraints.maxWidth;
-          final dy = details.delta.dy / constraints.maxHeight;
-          ref.read(simulationProvider.notifier).moveNode(node.id, dx, dy);
-        },
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              width: 44, height: 44,
-              decoration: BoxDecoration(
-                color: colors.$1, borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: isConnectStart ? AppColors.accentOrange : colors.$2, width: isConnectStart ? 3 : 2),
+            Icon(icon, color: AppColors.secondaryGreen, size: 18),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: AppTextStyles.labelTiny.copyWith(
+                color: AppColors.secondaryGreen,
+                fontWeight: FontWeight.w800,
               ),
-              child: Icon(_nodeIcon(node.type), color: colors.$2, size: 22),
             ),
-            const SizedBox(height: 3),
-            Text(node.label, style: AppTextStyles.labelTiny.copyWith(color: AppColors.secondaryGreen, fontWeight: FontWeight.w800)),
-            Text(node.ipAddress, style: AppTextStyles.statLabel.copyWith(color: AppColors.textMuted, fontSize: 11)),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildPacket(SimulationState sim, BoxConstraints constraints) {
-    final nodeId = sim.selectedPath[sim.packetProgress];
-    final nodeList = sim.simulation.nodes.where((n) => n.id == nodeId).toList();
-    if (nodeList.isEmpty) return const SizedBox();
-    final node = nodeList.first;
-    return AnimatedPositioned(
-      duration: const Duration(milliseconds: 500),
-      curve: Curves.easeInOut,
-      left: node.x * constraints.maxWidth + 16,
-      top: node.y * constraints.maxHeight - 8,
-      child: Container(
-        width: 12, height: 12,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle, color: AppColors.accentOrange,
-          boxShadow: [BoxShadow(color: AppColors.accentOrange.withValues(alpha: 0.4), blurRadius: 8)],
-        ),
-      ).animate(onPlay: (c) => c.repeat(reverse: true))
-          .scale(begin: const Offset(1, 1), end: const Offset(1.3, 1.3), duration: 500.ms),
-    );
+  void _addNode(NodeType type) {
+    ref.read(audioProvider.notifier).playSfx(SoundEffect.buttonTap);
+    ref.read(simulationProvider.notifier).addNode(type);
   }
 
-  (Color, Color) _nodeColors(NodeType type) => switch (type) {
-    NodeType.pc => (AppColors.primaryBlueSurface, AppColors.primaryBlueLight),
-    NodeType.router => (AppColors.secondaryGreenSurface, AppColors.secondaryGreenLight),
-    NodeType.switchDevice => (AppColors.secondaryGreenSurface, AppColors.secondaryGreenLight),
-    NodeType.server => (AppColors.accentOrangeSurface, AppColors.accentOrange),
+  Future<void> _sendPacket() async {
+    ref.read(audioProvider.notifier).playSfx(SoundEffect.packetSend);
+    setState(() => _stats = _stats.copyWith(sendAttempts: _stats.sendAttempts + 1));
+    final success = await ref.read(simulationProvider.notifier).sendPacket();
+    if (!mounted) return;
+    ref
+        .read(audioProvider.notifier)
+        .playSfx(success ? SoundEffect.packetArrive : SoundEffect.incorrect);
+  }
+
+  String _labelOf(SimulationState sim, String? nodeId) {
+    if (nodeId == null) return '—';
+    for (final n in sim.simulation.nodes) {
+      if (n.id == nodeId) return n.label;
+    }
+    return '—';
+  }
+
+  String _cableLabel(CableType type) => switch (type) {
+    CableType.straight => 'Straight',
+    CableType.cross => 'Cross',
+    CableType.wifi => 'WiFi',
   };
 
-  IconData _nodeIcon(NodeType type) => switch (type) {
+  String _typeLabel(NodeType type) => switch (type) {
+    NodeType.pc => 'PC',
+    NodeType.router => 'Router',
+    NodeType.switchDevice => 'Switch',
+    NodeType.server => 'Server',
+  };
+
+  IconData _iconFor(NodeType type) => switch (type) {
     NodeType.pc => Icons.computer_rounded,
     NodeType.router => Icons.router_rounded,
     NodeType.switchDevice => Icons.device_hub_rounded,
     NodeType.server => Icons.dns_rounded,
   };
-}
-
-class _ConnectionPainter extends CustomPainter {
-  final SimulationModel simulation;
-  final List<String> selectedPath;
-  _ConnectionPainter(this.simulation, this.selectedPath);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    for (final conn in simulation.connections) {
-      final fromList = simulation.nodes.where((n) => n.id == conn.fromNodeId).toList();
-      final toList = simulation.nodes.where((n) => n.id == conn.toNodeId).toList();
-      if (fromList.isEmpty || toList.isEmpty) continue;
-      
-      final from = fromList.first;
-      final to = toList.first;
-
-      final isOnPath = _isConnectionOnPath(conn.fromNodeId, conn.toNodeId);
-      final paint = Paint()
-        ..color = isOnPath ? AppColors.secondaryGreenAccent : Colors.grey.shade300
-        ..strokeWidth = isOnPath ? 2.7 : 1.6
-        ..style = PaintingStyle.stroke;
-
-      final startX = from.x * size.width + 22;
-      final startY = from.y * size.height + 22;
-      final endX = to.x * size.width + 22;
-      final endY = to.y * size.height + 22;
-
-      final path = Path()..moveTo(startX, startY)..lineTo(endX, endY);
-      
-      const dashWidth = 6.0;
-      const dashSpace = 3.0;
-      final metrics = path.computeMetrics();
-      for (final metric in metrics) {
-        double distance = 0;
-        while (distance < metric.length) {
-          final len = (distance + dashWidth).clamp(0.0, metric.length);
-          canvas.drawPath(metric.extractPath(distance, len), paint);
-          distance += dashWidth + dashSpace;
-        }
-      }
-    }
-  }
-
-  bool _isConnectionOnPath(String fromId, String toId) {
-    for (int i = 0; i < selectedPath.length - 1; i++) {
-      if ((selectedPath[i] == fromId && selectedPath[i + 1] == toId) ||
-          (selectedPath[i] == toId && selectedPath[i + 1] == fromId)) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  @override
-  bool shouldRepaint(covariant _ConnectionPainter oldDelegate) => true;
 }

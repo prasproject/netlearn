@@ -10,11 +10,11 @@ import 'package:intl/date_symbol_data_local.dart';
 class CertificateGenerator {
   CertificateGenerator._();
 
-  // Color constants for PDF
-  static const _blue = PdfColor.fromInt(0xFF0D47A1);
-  static const _blueDark = PdfColor.fromInt(0xFF0A3575);
-  static const _blueLight = PdfColor.fromInt(0xFF90CAF9);
-  static const _gold = PdfColor.fromInt(0xFFFFD54F);
+  // Color constants for PDF — kept in step with the pastel AppColors palette.
+  static const _blue = PdfColor.fromInt(0xFF4A63C8);
+  static const _blueDark = PdfColor.fromInt(0xFF33499F);
+  static const _blueLight = PdfColor.fromInt(0xFFA9C7FF);
+  static const _gold = PdfColor.fromInt(0xFFFFD98A);
   static const _gray = PdfColor.fromInt(0xFFB0BEC5);
   static const _grayDark = PdfColor.fromInt(0xFF78909C);
   static const _white05 = PdfColor.fromInt(0x0DFFFFFF);

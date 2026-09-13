@@ -12,6 +12,7 @@ import '../../domain/providers/audio_provider.dart';
 import '../../domain/providers/progress_provider.dart';
 import '../../domain/providers/auth_provider.dart';
 import '../../domain/services/ngain_calculator.dart';
+import '../../core/widgets/loading_views.dart';
 
 /// Latihan quiz — 5 soal setelah menyelesaikan materi unit.
 class PracticeQuizScreen extends ConsumerStatefulWidget {
@@ -97,7 +98,7 @@ class _PracticeQuizScreenState extends ConsumerState<PracticeQuizScreen> {
   Widget build(BuildContext context) {
     final quiz = ref.watch(quizProvider);
     if (quiz.activeQuiz == null) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return Scaffold(body: AppLoader(message: 'Menyiapkan latihan...'));
     }
 
     if (quiz.isFinished && !_savedScore) {
@@ -109,7 +110,7 @@ class _PracticeQuizScreenState extends ConsumerState<PracticeQuizScreen> {
           quiz.correctCount,
         );
       });
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return Scaffold(body: AppLoader(message: 'Menyimpan hasilmu...'));
     }
 
     final q = quiz.activeQuiz!.questions[quiz.currentQuestionIndex];

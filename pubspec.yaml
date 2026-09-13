@@ -73,3 +73,7 @@ flutter:
     - assets/lottie/
     - assets/audio/
     - assets/data/materials.json
+    # Nunito shipped with the app: google_fonts picks these up instead of
+    # downloading from fonts.gstatic.com at runtime, so text renders instantly
+    # and the app still looks right offline / behind a blocked network.
+    - google_fonts/

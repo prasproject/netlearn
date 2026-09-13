@@ -1,0 +1,5 @@
+tags:
+  # Developer tool: renders the isometric simulation canvas to PNG files for
+  # visual checking. Skipped in normal runs; opt in with `--tags preview`.
+  preview:
+    skip: "jalankan dengan: flutter test --tags preview"

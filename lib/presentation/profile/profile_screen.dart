@@ -14,6 +14,10 @@ import '../../domain/providers/simulation_provider.dart';
 import '../../domain/providers/repository_providers.dart';
 import '../../data/repositories/progress_repository.dart';
 import '../../data/models/progress_model.dart';
+import '../../core/constants/app_dimensions.dart';
+import '../../core/constants/app_shadows.dart';
+import '../../core/widgets/pressable.dart';
+import '../../core/widgets/surface_card.dart';
 
 /// Profile Screen — Shows WhatsApp number, settings with audio/music toggles.
 class ProfileScreen extends ConsumerWidget {
@@ -112,8 +116,7 @@ class ProfileScreen extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('PENGATURAN', style: AppTextStyles.eyebrow.copyWith(color: AppColors.primaryBlue)),
-                  const SizedBox(height: 10),
+                  const SectionHeader(title: 'Pengaturan', icon: Icons.tune_rounded),
                   _settingTile(Icons.volume_up_rounded, AppStrings.audioSettings,
                     subtitle: audio.sfxEnabled ? 'Aktif' : 'Nonaktif',
                     trailing: Switch(
@@ -131,23 +134,25 @@ class ProfileScreen extends ConsumerWidget {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  Text('LAINNYA', style: AppTextStyles.eyebrow.copyWith(color: AppColors.primaryBlue)),
-                  const SizedBox(height: 10),
+                  const SectionHeader(title: 'Lainnya', icon: Icons.more_horiz_rounded),
                   _settingTile(Icons.info_outline_rounded, AppStrings.about,
                     subtitle: 'NetLearn v1.0'),
                   _settingTile(
                     Icons.leaderboard_rounded,
+                    color: AppColors.gold,
                     AppStrings.leaderboard,
                     onTap: () => _showLeaderboard(context, ref),
                   ),
                   _settingTile(
                     Icons.restart_alt_rounded,
+                    color: AppColors.error,
                     'Reset Data Belajar',
                     subtitle: 'Kembalikan progress seperti akun baru',
                     onTap: () => _confirmResetLearningData(context, ref),
                   ),
                   _settingTile(
                     Icons.lock_open_rounded,
+                    color: AppColors.secondaryGreen,
                     'Buka Semua Menu',
                     subtitle: 'Buka kunci Materi, Simulasi, Test, Progress',
                     onTap: () => _confirmUnlockAllMenus(context, ref),
@@ -293,23 +298,45 @@ class ProfileScreen extends ConsumerWidget {
     }
   }
 
-  Widget _settingTile(IconData icon, String title, {String? subtitle, Widget? trailing, VoidCallback? onTap}) {
-    return GestureDetector(
+  Widget _settingTile(IconData icon, String title,
+      {String? subtitle, Widget? trailing, VoidCallback? onTap, Color? color}) {
+    final tint = color ?? AppColors.primaryBlue;
+    return Pressable(
       onTap: onTap,
       child: Container(
         margin: const EdgeInsets.only(bottom: 8),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(AppDimensions.radiusLarge),
+          border: Border.all(color: AppColors.cardBorder),
+          boxShadow: AppShadows.card,
+        ),
         child: Row(
           children: [
-            Icon(icon, size: 20, color: AppColors.primaryBlue),
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: tint.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, size: 18, color: tint),
+            ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: AppTextStyles.bodyMedium),
-                  if (subtitle != null) Text(subtitle, style: AppTextStyles.bodySmall),
+                  Text(
+                    title,
+                    style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.w700),
+                  ),
+                  if (subtitle != null)
+                    Text(
+                      subtitle,
+                      style: AppTextStyles.bodySmall.copyWith(color: AppColors.textMuted),
+                    ),
                 ],
               ),
             ),

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/models/material_model.dart';
 import '../../data/models/progress_model.dart';
@@ -16,13 +18,24 @@ class ProgressState {
   final List<AchievementModel> achievements;
   final ReflectionModel? reflection;
 
+  /// Set when a write to the database failed. The UI surfaces this so a user
+  /// never sees a value on screen that was not actually saved.
+  final String? syncError;
+
+  /// True while a write is in flight (used to disable double taps).
+  final bool isSaving;
+
   const ProgressState({
     this.unitProgress = const [],
     this.overallPretestScore,
     this.overallPosttestScore,
     this.achievements = const [],
     this.reflection,
+    this.syncError,
+    this.isSaving = false,
   });
+
+  static const Object _unset = Object();
 
   /// Apakah Pre-Test sudah pernah dikerjakan (terlepas dari skornya).
   bool get hasCompletedPretest => overallPretestScore != null;
@@ -54,17 +67,28 @@ class ProgressState {
 
   ProgressState copyWith({
     List<ProgressModel>? unitProgress,
-    int? overallPretestScore,
-    int? overallPosttestScore,
+    Object? overallPretestScore = _unset,
+    Object? overallPosttestScore = _unset,
     List<AchievementModel>? achievements,
-    ReflectionModel? reflection,
+    Object? reflection = _unset,
+    Object? syncError = _unset,
+    bool? isSaving,
   }) {
     return ProgressState(
       unitProgress: unitProgress ?? this.unitProgress,
-      overallPretestScore: overallPretestScore ?? this.overallPretestScore,
-      overallPosttestScore: overallPosttestScore ?? this.overallPosttestScore,
+      overallPretestScore: identical(overallPretestScore, _unset)
+          ? this.overallPretestScore
+          : overallPretestScore as int?,
+      overallPosttestScore: identical(overallPosttestScore, _unset)
+          ? this.overallPosttestScore
+          : overallPosttestScore as int?,
       achievements: achievements ?? this.achievements,
-      reflection: reflection ?? this.reflection,
+      reflection: identical(reflection, _unset)
+          ? this.reflection
+          : reflection as ReflectionModel?,
+      syncError:
+          identical(syncError, _unset) ? this.syncError : syncError as String?,
+      isSaving: isSaving ?? this.isSaving,
     );
   }
 }
@@ -76,10 +100,98 @@ class ProgressNotifier extends StateNotifier<ProgressState> {
   static const String _badgeQuiz = 'badge-quiz';
   static const String _badgeSimulation = 'badge-simulasi';
 
+  StreamSubscription<List<ProgressModel>>? _progressSub;
+  StreamSubscription<List<AchievementModel>>? _achievementSub;
+  StreamSubscription<ReflectionModel?>? _reflectionSub;
+
   ProgressNotifier(this._repo, this._userId) : super(const ProgressState()) {
     // Don't load or write progress without a valid authenticated user id.
     if (_userId.trim().isEmpty) return;
-    _loadProgress();
+    _init();
+  }
+
+  Future<void> _init() async {
+    await _loadProgress();
+    _bindRealtime();
+  }
+
+  /// Mirror the database continuously so what the screen shows is always what
+  /// is actually stored — including writes made from another device.
+  void _bindRealtime() {
+    if (!_repo.supportsRealtime || _userId.trim().isEmpty) return;
+
+    _progressSub ??= _repo.watchProgress(_userId).listen(
+      (all) => _applyProgressSnapshot(all),
+      onError: (Object e) => _reportSyncError(e),
+    );
+
+    _achievementSub ??= _repo.watchAchievements(_userId).listen(
+      (achievements) {
+        if (!mounted) return;
+        state = state.copyWith(achievements: achievements);
+      },
+      onError: (Object e) => _reportSyncError(e),
+    );
+
+    _reflectionSub ??= _repo.watchReflection(_userId).listen(
+      (reflection) {
+        if (!mounted) return;
+        state = state.copyWith(reflection: reflection);
+      },
+      onError: (Object e) => _reportSyncError(e),
+    );
+  }
+
+  void _applyProgressSnapshot(List<ProgressModel> all) {
+    if (!mounted) return;
+
+    // Extract overall quiz meta (pre/post) stored under a special unitId.
+    final overall = all.cast<ProgressModel?>().firstWhere(
+          (p) => p?.unitId == _overallUnitId,
+          orElse: () => null,
+        );
+    final unitProgress = all.where((p) => p.unitId != _overallUnitId).toList();
+
+    state = state.copyWith(
+      unitProgress: unitProgress,
+      overallPretestScore: overall?.pretestScore,
+      // Use `finalScore` as persisted overall post-test score.
+      overallPosttestScore: overall?.finalScore,
+      syncError: null,
+    );
+
+    _syncUnitBadgesFromProgress(unitProgress);
+  }
+
+  void _reportSyncError(Object error) {
+    if (!mounted) return;
+    state = state.copyWith(
+      syncError: 'Gagal sinkron dengan server. Periksa koneksi internet.',
+      isSaving: false,
+    );
+  }
+
+  /// Clear a surfaced sync error (called after the UI has shown it).
+  void clearSyncError() {
+    if (!mounted || state.syncError == null) return;
+    state = state.copyWith(syncError: null);
+  }
+
+  /// Run a write and, if it fails, re-read the database so the UI falls back to
+  /// the real stored value instead of keeping an optimistic one.
+  Future<bool> _write(Future<void> Function() action) async {
+    if (mounted) state = state.copyWith(isSaving: true, syncError: null);
+    try {
+      await action();
+      if (mounted) state = state.copyWith(isSaving: false);
+      return true;
+    } catch (e) {
+      // Re-read first so the UI falls back to the stored truth, then report —
+      // reloading would otherwise clear the error we just set.
+      await _loadProgress();
+      _reportSyncError(e);
+      return false;
+    }
   }
 
   Future<void> _loadProgress() async {
@@ -111,14 +223,22 @@ class ProgressNotifier extends StateNotifier<ProgressState> {
     await _syncUnitBadgesFromProgress(unitProgress);
   }
 
-  void updateUnitProgress(String unitId, ProgressModel progress) {
+  @override
+  void dispose() {
+    _progressSub?.cancel();
+    _achievementSub?.cancel();
+    _reflectionSub?.cancel();
+    super.dispose();
+  }
+
+  Future<void> updateUnitProgress(String unitId, ProgressModel progress) async {
     if (_userId.trim().isEmpty) return;
     final updated = state.unitProgress.map((p) {
       if (p.unitId == unitId) return progress;
       return p;
     }).toList();
     state = state.copyWith(unitProgress: updated);
-    _repo.saveProgress(_userId, progress);
+    await _write(() => _repo.saveProgress(_userId, progress));
   }
 
   Future<bool> completeMaterial(String unitId, {required int totalSlides}) =>
@@ -152,7 +272,7 @@ class ProgressNotifier extends StateNotifier<ProgressState> {
         completedAt: isNowCompleted ? (p.completedAt ?? DateTime.now()) : null,
       );
       updated[idx] = synced;
-      await _repo.saveProgress(_userId, synced);
+      await _write(() => _repo.saveProgress(_userId, synced));
       changed = true;
     }
 
@@ -180,7 +300,7 @@ class ProgressNotifier extends StateNotifier<ProgressState> {
 
     final updated = List<ProgressModel>.from(state.unitProgress)..[idx] = synced;
     state = state.copyWith(unitProgress: updated);
-    await _repo.saveProgress(_userId, synced);
+    await _write(() => _repo.saveProgress(_userId, synced));
     if (completed) {
       await _unlockBadge(_badgeUnitForUnitId(unitId));
     }
@@ -209,7 +329,7 @@ class ProgressNotifier extends StateNotifier<ProgressState> {
         if (p.totalMaterials != totalSlides) {
           updated[idx] = p.copyWith(totalMaterials: totalSlides);
           state = state.copyWith(unitProgress: updated);
-          await _repo.saveProgress(_userId, updated[idx]);
+          await _write(() => _repo.saveProgress(_userId, updated[idx]));
         }
         return false;
       }
@@ -233,23 +353,32 @@ class ProgressNotifier extends StateNotifier<ProgressState> {
     }
 
     state = state.copyWith(unitProgress: updated);
-    await _repo.saveProgress(_userId, changed);
+    final saved = await _write(() => _repo.saveProgress(_userId, changed!));
+    // A failed write rolls the state back in `_write`, so don't report progress
+    // (and don't hand out XP) for something that was never stored.
+    if (!saved) return false;
     if (becameCompleted) {
       await _unlockBadge(_badgeUnitForUnitId(unitId));
     }
     return becameCompleted;
   }
 
-  void savePretestScore(int score) {
+  Future<void> savePretestScore(int score) async {
     if (_userId.trim().isEmpty) return;
+    final saved = await _write(
+      () => _repo.saveQuizScore(_userId, _overallUnitId, pretestScore: score),
+    );
+    if (!saved || !mounted) return;
     state = state.copyWith(overallPretestScore: score);
-    _repo.saveQuizScore(_userId, _overallUnitId, pretestScore: score);
   }
 
-  void savePosttestScore(int score) {
+  Future<void> savePosttestScore(int score) async {
     if (_userId.trim().isEmpty) return;
+    final saved = await _write(
+      () => _repo.saveQuizScore(_userId, _overallUnitId, finalScore: score),
+    );
+    if (!saved || !mounted) return;
     state = state.copyWith(overallPosttestScore: score);
-    _repo.saveQuizScore(_userId, _overallUnitId, finalScore: score);
   }
 
   Future<void> saveUnitQuizScore({
@@ -260,29 +389,35 @@ class ProgressNotifier extends StateNotifier<ProgressState> {
     if (_userId.trim().isEmpty) return;
     // Persist to DB first (authoritative record).
     if (quizType == 'Pre-Test') {
-      await _repo.saveQuizScore(_userId, _overallUnitId, pretestScore: scorePercent);
-      if (!mounted) return;
+      final ok = await _write(() =>
+          _repo.saveQuizScore(_userId, _overallUnitId, pretestScore: scorePercent));
+      if (!ok || !mounted) return;
       state = state.copyWith(overallPretestScore: scorePercent);
       return;
     }
 
     if (quizType == 'Post-Test') {
-      await _repo.saveQuizScore(_userId, _overallUnitId, finalScore: scorePercent);
-      if (!mounted) return;
+      final ok = await _write(() =>
+          _repo.saveQuizScore(_userId, _overallUnitId, finalScore: scorePercent));
+      if (!ok || !mounted) return;
       state = state.copyWith(overallPosttestScore: scorePercent);
       return;
     }
 
+    final bool ok;
     if (quizType == 'Checkpoint') {
-      await _repo.saveQuizScore(_userId, unitId, checkpointScore: scorePercent);
+      ok = await _write(() =>
+          _repo.saveQuizScore(_userId, unitId, checkpointScore: scorePercent));
     } else if (quizType == 'Latihan') {
-      await _repo.saveQuizScore(_userId, unitId, practiceScore: scorePercent);
+      ok = await _write(() =>
+          _repo.saveQuizScore(_userId, unitId, practiceScore: scorePercent));
     } else {
       // Treat everything else as a final quiz score.
-      await _repo.saveQuizScore(_userId, unitId, finalScore: scorePercent);
+      ok = await _write(() =>
+          _repo.saveQuizScore(_userId, unitId, finalScore: scorePercent));
     }
 
-    if (!mounted) return;
+    if (!ok || !mounted) return;
 
     // Update local state to match the write without re-fetching.
     final updated = state.unitProgress.map((p) {
@@ -308,8 +443,8 @@ class ProgressNotifier extends StateNotifier<ProgressState> {
 
   Future<void> saveReflection(ReflectionModel reflection) async {
     if (_userId.trim().isEmpty) return;
-    await _repo.saveReflection(_userId, reflection);
-    if (!mounted) return;
+    final ok = await _write(() => _repo.saveReflection(_userId, reflection));
+    if (!ok || !mounted) return;
     state = state.copyWith(reflection: reflection);
   }
 
@@ -391,12 +526,16 @@ class ProgressNotifier extends StateNotifier<ProgressState> {
       unlockedAt: now,
     );
     state = state.copyWith(achievements: current);
-    await _repo.unlockAchievement(_userId, badgeId);
+    await _write(() => _repo.unlockAchievement(_userId, badgeId));
   }
 }
 
 final progressProvider =
     StateNotifierProvider<ProgressNotifier, ProgressState>((ref) {
-  final userId = ref.watch(authProvider).user?.id ?? '';
+  // Watch only the user id. Watching the whole auth state rebuilt this notifier
+  // on every XP/streak/settings change, which threw away in-memory progress and
+  // re-subscribed the streams mid-flow — a frequent source of "the screen does
+  // not match what I just tapped".
+  final userId = ref.watch(authProvider.select((s) => s.user?.id ?? ''));
   return ProgressNotifier(ref.watch(progressRepositoryProvider), userId);
 });

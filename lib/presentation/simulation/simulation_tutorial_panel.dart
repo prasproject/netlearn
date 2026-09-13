@@ -19,9 +19,7 @@ class SimulationTutorialPanel extends StatelessWidget {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
         child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.sizeOf(dialogContext).height * 0.75,
-          ),
+          constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(dialogContext).height * 0.75),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -29,7 +27,11 @@ class SimulationTutorialPanel extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(16, 14, 8, 0),
                 child: Row(
                   children: [
-                    const Icon(Icons.info_outline_rounded, color: AppColors.secondaryGreen, size: 22),
+                    const Icon(
+                      Icons.info_outline_rounded,
+                      color: AppColors.secondaryGreen,
+                      size: 22,
+                    ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
@@ -69,53 +71,57 @@ class SimulationTutorialPanel extends StatelessWidget {
     if (tutorial == null) return const SizedBox.shrink();
 
     return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            tutorial.aboutTopology,
-            style: AppTextStyles.bodySmall.copyWith(height: 1.45, fontSize: 13),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          tutorial.aboutTopology,
+          style: AppTextStyles.bodySmall.copyWith(height: 1.45, fontSize: 13),
+        ),
+        const SizedBox(height: 10),
+        Text(
+          'LANGKAH MENGERJAKAN TUGAS',
+          style: AppTextStyles.eyebrow.copyWith(color: AppColors.secondaryGreen, fontSize: 11),
+        ),
+        const SizedBox(height: 6),
+        ...List.generate(tutorial.goalSteps.length, (i) => _stepRow(i + 1, tutorial.goalSteps[i])),
+        const SizedBox(height: 10),
+        Text(
+          'KONTROL APLIKASI',
+          style: AppTextStyles.eyebrow.copyWith(color: AppColors.secondaryGreen, fontSize: 11),
+        ),
+        const SizedBox(height: 6),
+        ...SimulationTutorials.commonControls.map(_bulletRow),
+        const SizedBox(height: 8),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: AppColors.secondaryGreenSurface,
+            borderRadius: BorderRadius.circular(8),
           ),
-          const SizedBox(height: 10),
-          Text(
-            'LANGKAH MENGERJAKAN TUGAS',
-            style: AppTextStyles.eyebrow.copyWith(color: AppColors.secondaryGreen, fontSize: 11),
-          ),
-          const SizedBox(height: 6),
-          ...List.generate(tutorial.goalSteps.length, (i) => _stepRow(i + 1, tutorial.goalSteps[i])),
-          const SizedBox(height: 10),
-          Text(
-            'KONTROL APLIKASI',
-            style: AppTextStyles.eyebrow.copyWith(color: AppColors.secondaryGreen, fontSize: 11),
-          ),
-          const SizedBox(height: 6),
-          ...SimulationTutorials.commonControls.map(_bulletRow),
-          const SizedBox(height: 8),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            decoration: BoxDecoration(
-              color: AppColors.secondaryGreenSurface,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Icon(Icons.lightbulb_outline_rounded, size: 16, color: AppColors.secondaryGreen),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    tutorial.tip,
-                    style: AppTextStyles.bodySmall.copyWith(
-                      color: AppColors.secondaryGreen,
-                      fontSize: 12,
-                      height: 1.4,
-                    ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(
+                Icons.lightbulb_outline_rounded,
+                size: 16,
+                color: AppColors.secondaryGreen,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  tutorial.tip,
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.secondaryGreen,
+                    fontSize: 12,
+                    height: 1.4,
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
+        ),
+      ],
     );
   }
 
@@ -140,7 +146,9 @@ class SimulationTutorialPanel extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          Expanded(child: Text(text, style: AppTextStyles.bodySmall.copyWith(height: 1.4, fontSize: 13))),
+          Expanded(
+            child: Text(text, style: AppTextStyles.bodySmall.copyWith(height: 1.4, fontSize: 13)),
+          ),
         ],
       ),
     );
@@ -152,8 +160,16 @@ class SimulationTutorialPanel extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('• ', style: AppTextStyles.bodySmall.copyWith(color: AppColors.secondaryGreen, fontWeight: FontWeight.w800)),
-          Expanded(child: Text(text, style: AppTextStyles.bodySmall.copyWith(height: 1.35, fontSize: 12))),
+          Text(
+            '• ',
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.secondaryGreen,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          Expanded(
+            child: Text(text, style: AppTextStyles.bodySmall.copyWith(height: 1.35, fontSize: 12)),
+          ),
         ],
       ),
     );

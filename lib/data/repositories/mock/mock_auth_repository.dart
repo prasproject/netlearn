@@ -4,7 +4,7 @@ import '../auth_repository.dart';
 
 /// Mock auth repository — uses SeedData for Phase 1.
 /// Simulates Firebase Phone Auth OTP flow.
-class MockAuthRepository implements AuthRepository {
+class MockAuthRepository extends AuthRepository {
   UserModel? _currentUser;
   final List<UserModel> _users = [
     SeedData.demoAdmin,

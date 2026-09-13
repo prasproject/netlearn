@@ -5,7 +5,10 @@ import 'package:go_router/go_router.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
+import '../../core/constants/app_dimensions.dart';
+import '../../core/constants/app_motion.dart';
 import '../../core/widgets/header_back_button.dart';
+import '../../core/widgets/surface_card.dart';
 import '../../domain/providers/material_provider.dart';
 import '../../domain/providers/auth_provider.dart';
 import '../../domain/providers/progress_provider.dart';
@@ -46,7 +49,7 @@ class ProgressScreen extends ConsumerWidget {
                       children: [
                         _statCard('${progress.completedUnits}', 'Unit Selesai'),
                         const SizedBox(width: 8),
-                        _statCard('${(progress.overallProgress * 100).round()}%', 'Progress'),
+                        _statCard('${(progress.overallProgress * 100).round()}', 'Progress', suffix: '%'),
                         const SizedBox(width: 8),
                         _statCard('${user?.xp ?? 0}', 'Total XP'),
                       ],
@@ -64,8 +67,7 @@ class ProgressScreen extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // ── Unit Progress List ──
-                  Text('UNIT BELAJAR', style: AppTextStyles.eyebrow.copyWith(color: AppColors.progressTeal)),
-                  const SizedBox(height: 10),
+                  const SectionHeader(title: 'UNIT BELAJAR', color: AppColors.progressTeal),
                   ...List.generate(progress.unitProgress.length, (i) {
                     final p = progress.unitProgress[i];
                     final materials = ref.watch(materialProvider).materials;
@@ -97,10 +99,16 @@ class ProgressScreen extends ConsumerWidget {
                             width: 60,
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(99),
-                              child: LinearProgressIndicator(
-                                value: pct, minHeight: 5,
-                                backgroundColor: Colors.grey.shade200,
-                                valueColor: AlwaysStoppedAnimation(statusColor),
+                              child: TweenAnimationBuilder<double>(
+                                tween: Tween(begin: 0, end: pct),
+                                duration: AppMotion.slow,
+                                curve: AppMotion.enter,
+                                builder: (context, value, _) => LinearProgressIndicator(
+                                  value: value,
+                                  minHeight: 5,
+                                  backgroundColor: Colors.grey.shade200,
+                                  valueColor: AlwaysStoppedAnimation(statusColor),
+                                ),
                               ),
                             ),
                           ),
@@ -112,8 +120,7 @@ class ProgressScreen extends ConsumerWidget {
                   const SizedBox(height: 24),
 
                   // ── Bar Chart: Skor Latihan Per Unit ──
-                  Text('SKOR LATIHAN PER UNIT', style: AppTextStyles.eyebrow.copyWith(color: AppColors.progressTeal)),
-                  const SizedBox(height: 8),
+                  const SectionHeader(title: 'SKOR LATIHAN PER UNIT', color: AppColors.progressTeal),
                   Container(
                     height: 200,
                     padding: const EdgeInsets.fromLTRB(8, 16, 16, 8),
@@ -182,8 +189,7 @@ class ProgressScreen extends ConsumerWidget {
                   const SizedBox(height: 24),
 
                   // ── Pie Chart: Penyelesaian Keseluruhan ──
-                  Text('PENYELESAIAN MATERI', style: AppTextStyles.eyebrow.copyWith(color: AppColors.progressTeal)),
-                  const SizedBox(height: 8),
+                  const SectionHeader(title: 'PENYELESAIAN MATERI', color: AppColors.progressTeal),
                   Container(
                     height: 180,
                     padding: const EdgeInsets.all(16),
@@ -329,14 +335,33 @@ class ProgressScreen extends ConsumerWidget {
     ];
   }
 
-  Widget _statCard(String value, String label) {
+  /// Header stat. Numbers count up to their value so a progress change is
+  /// something the student actually notices.
+  Widget _statCard(String value, String label, {String suffix = ''}) {
+    final numeric = int.tryParse(value.replaceAll(RegExp(r'[^0-9]'), ''));
     return Expanded(
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(10)),
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(AppDimensions.radiusLarge),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+        ),
         child: Column(
           children: [
-            Text(value, style: AppTextStyles.statValue),
+            if (numeric == null)
+              Text(value, style: AppTextStyles.statValue)
+            else
+              TweenAnimationBuilder<double>(
+                tween: Tween(begin: 0, end: numeric.toDouble()),
+                duration: AppMotion.slow,
+                curve: AppMotion.enter,
+                builder: (context, v, _) => Text(
+                  '${v.round()}$suffix',
+                  style: AppTextStyles.statValue,
+                ),
+              ),
+            const SizedBox(height: 2),
             Text(label, style: AppTextStyles.statLabel.copyWith(color: Colors.white70)),
           ],
         ),

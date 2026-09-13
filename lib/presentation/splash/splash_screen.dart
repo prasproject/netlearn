@@ -16,8 +16,7 @@ class SplashScreen extends ConsumerStatefulWidget {
   ConsumerState<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends ConsumerState<SplashScreen>
-    with TickerProviderStateMixin {
+class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProviderStateMixin {
   double _progress = 0.0;
 
   @override
@@ -55,7 +54,8 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [AppColors.primaryBlue, Color(0xFF0A3575)],
+            colors: AppColors.brandGradient,
+            stops: AppColors.brandGradientStops,
           ),
         ),
         child: Stack(
@@ -89,10 +89,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
                     child: AnimatedProgressBar(
                       progress: _progress,
                       height: 5,
-                      gradientColors: const [
-                        AppColors.primaryBlueAccent,
-                        AppColors.primaryBlueSky,
-                      ],
+                      gradientColors: const [AppColors.primaryBlueAccent, AppColors.primaryBlueSky],
                     ),
                   ).animate().fadeIn(delay: 700.ms),
                 ],

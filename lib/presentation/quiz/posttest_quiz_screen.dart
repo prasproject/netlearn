@@ -10,6 +10,8 @@ import '../../data/models/quiz_model.dart';
 import '../../domain/providers/audio_provider.dart';
 import '../../domain/providers/progress_provider.dart';
 import '../../domain/providers/quiz_provider.dart';
+import 'quiz_result_flow.dart';
+import '../../core/widgets/loading_views.dart';
 
 /// Post-Test Screen — Green themed quiz with timer.
 class PosttestQuizScreen extends ConsumerStatefulWidget {
@@ -40,28 +42,29 @@ class _PosttestQuizScreenState extends ConsumerState<PosttestQuizScreen> {
   Widget build(BuildContext context) {
     final quiz = ref.watch(quizProvider);
     if (quiz.activeQuiz == null) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return Scaffold(body: AppLoader(message: 'Menyiapkan Post-Test...'));
     }
 
     if (quiz.isFinished) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!_savedScore) {
-          _savedScore = true;
-          ref.read(progressProvider.notifier).saveUnitQuizScore(
-            unitId: '',
-            quizType: 'Post-Test',
-            scorePercent: quiz.scorePercent,
-          );
-        }
-        context.pushReplacement('/feedback', extra: {
-          'score': quiz.scorePercent,
-          'totalQuestions': quiz.activeQuiz!.totalQuestions,
-          'xpEarned': quiz.activeQuiz!.xpReward,
-          'quizType': 'Post-Test',
-          'unitTitle': '',
-        });
+        if (_savedScore) return;
+        _savedScore = true;
+        saveQuizResultThenContinue(
+          context: context,
+          ref: ref,
+          unitId: '',
+          quizType: 'Post-Test',
+          scorePercent: quiz.scorePercent,
+          feedbackExtra: {
+            'score': quiz.scorePercent,
+            'totalQuestions': quiz.activeQuiz!.totalQuestions,
+            'xpEarned': quiz.activeQuiz!.xpReward,
+            'quizType': 'Post-Test',
+            'unitTitle': '',
+          },
+        );
       });
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return Scaffold(body: AppLoader(message: 'Menyimpan hasilmu...'));
     }
 
     final q = quiz.activeQuiz!.questions[quiz.currentQuestionIndex];

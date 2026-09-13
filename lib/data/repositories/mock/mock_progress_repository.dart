@@ -4,7 +4,7 @@ import '../../seed/seed_data.dart';
 import '../progress_repository.dart';
 
 /// Mock progress repository — uses SeedData.
-class MockProgressRepository implements ProgressRepository {
+class MockProgressRepository extends ProgressRepository {
   final List<ProgressModel> _progress = List.from(SeedData.demoProgress);
   final List<AchievementModel> _achievements = List.from(SeedData.achievements);
   ReflectionModel? _reflection;

@@ -9,6 +9,8 @@ import '../../core/widgets/gradient_button.dart';
 import '../../core/widgets/network_mascot.dart';
 import '../../domain/providers/auth_provider.dart';
 import '../../domain/providers/audio_provider.dart';
+import 'package:get_storage/get_storage.dart';
+import '../onboarding/onboarding_screen.dart';
 
 /// Login Screen — WhatsApp number + OTP.
 class LoginScreen extends ConsumerStatefulWidget {
@@ -32,14 +34,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     ref.read(audioProvider.notifier).playSfx(SoundEffect.buttonTap);
     final username = _usernameController.text.trim();
     final password = _passwordController.text.trim();
-    
+
     if (username.isEmpty || password.isEmpty) return;
-    
+
     final success = await ref.read(authProvider.notifier).login(username, password);
     if (success && mounted) {
       final user = ref.read(authProvider).user;
       if (user?.role == 'admin') {
         context.go('/admin');
+      } else if (user != null && GetStorage().read(onboardingSeenKey(user.id)) != true) {
+        // Students who have never been through the welcome tour (including
+        // accounts made before it existed) get it once, and can skip it.
+        context.go('/onboarding');
       } else {
         context.go('/home');
       }
@@ -56,9 +62,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         height: double.infinity,
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            begin: Alignment.topCenter, end: Alignment.bottomCenter,
-            colors: [AppColors.primaryBlue, Color(0xFF0A3575)],
-            stops: [0.0, 0.4],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: AppColors.brandGradient,
+            stops: AppColors.brandGradientStops,
           ),
         ),
         child: SafeArea(
@@ -69,38 +76,53 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 const SizedBox(height: 40),
                 const NetworkMascot(size: 80),
                 const SizedBox(height: 12),
-                Text(AppStrings.appName, style: AppTextStyles.splashTitle)
-                    .animate().fadeIn(delay: 200.ms),
+                Text(
+                  AppStrings.appName,
+                  style: AppTextStyles.splashTitle,
+                ).animate().fadeIn(delay: 200.ms),
                 const SizedBox(height: 4),
-                Text(AppStrings.loginSubtitle,
+                Text(
+                  AppStrings.loginSubtitle,
                   style: AppTextStyles.bodySmall.copyWith(color: Colors.white70),
                 ).animate().fadeIn(delay: 300.ms),
                 const SizedBox(height: 36),
-                
+
                 // Form card
                 Container(
                   padding: const EdgeInsets.all(24),
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(24),
-                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 20, offset: const Offset(0, 8))],
-                  ),
-                  child: _buildLoginForm(authState),
-                ).animate().slideY(begin: 0.1, duration: 500.ms, curve: Curves.easeOut).fadeIn(),
-                
-                Wrap(
-                    alignment: WrapAlignment.center,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      Text(AppStrings.noAccount, style: AppTextStyles.bodySmall.copyWith(color: Colors.white70)),
-                      TextButton(
-                        onPressed: () => context.go('/register'),
-                        child: Text(AppStrings.register,
-                          style: AppTextStyles.bodyMedium.copyWith(color: AppColors.primaryBlueAccent),
-                        ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.1),
+                        blurRadius: 20,
+                        offset: const Offset(0, 8),
                       ),
                     ],
                   ),
+                  child: _buildLoginForm(authState),
+                ).animate().slideY(begin: 0.1, duration: 500.ms, curve: Curves.easeOut).fadeIn(),
+
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Text(
+                      AppStrings.noAccount,
+                      style: AppTextStyles.bodySmall.copyWith(color: Colors.white70),
+                    ),
+                    TextButton(
+                      onPressed: () => context.go('/register'),
+                      child: Text(
+                        AppStrings.register,
+                        style: AppTextStyles.bodyMedium.copyWith(
+                          color: AppColors.primaryBlueAccent,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 20),
               ],
             ),
@@ -117,7 +139,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       children: [
         Text('Masuk', style: AppTextStyles.screenTitle.copyWith(color: AppColors.primaryBlue)),
         const SizedBox(height: 8),
-        Text('Masukkan Username dan Password Anda.', style: AppTextStyles.bodySmall.copyWith(color: AppColors.textMuted)),
+        Text(
+          'Masukkan Username dan Password Anda.',
+          style: AppTextStyles.bodySmall.copyWith(color: AppColors.textMuted),
+        ),
         const SizedBox(height: 20),
         TextField(
           controller: _usernameController,
@@ -139,7 +164,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         ),
         if (authState.authError != null) ...[
           const SizedBox(height: 12),
-          Text(authState.authError!, style: AppTextStyles.bodySmall.copyWith(color: AppColors.error)),
+          Text(
+            authState.authError!,
+            style: AppTextStyles.bodySmall.copyWith(color: AppColors.error),
+          ),
         ],
         const SizedBox(height: 24),
         GradientButton(

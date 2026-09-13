@@ -45,26 +45,38 @@ class ProgressModel {
     return checkpointScores.reduce((a, b) => a + b) ~/ checkpointScores.length;
   }
 
+  /// Sentinel so `copyWith` can tell "not passed" apart from an explicit `null`.
+  /// Without this, a score or completion date can never be cleared and the UI
+  /// keeps showing a stale value after a reset.
+  static const Object _unset = Object();
+
   ProgressModel copyWith({
     int? materialsCompleted,
     int? totalMaterials,
-    int? pretestScore,
+    Object? pretestScore = _unset,
     List<int>? checkpointScores,
-    int? finalScore,
-    DateTime? completedAt,
+    Object? finalScore = _unset,
+    Object? completedAt = _unset,
     List<int>? bookmarkedSlides,
-    int? practiceScore,
+    Object? practiceScore = _unset,
   }) {
     return ProgressModel(
       unitId: unitId,
       materialsCompleted: materialsCompleted ?? this.materialsCompleted,
       totalMaterials: totalMaterials ?? this.totalMaterials,
-      pretestScore: pretestScore ?? this.pretestScore,
+      pretestScore: identical(pretestScore, _unset)
+          ? this.pretestScore
+          : pretestScore as int?,
       checkpointScores: checkpointScores ?? this.checkpointScores,
-      finalScore: finalScore ?? this.finalScore,
-      completedAt: completedAt ?? this.completedAt,
+      finalScore:
+          identical(finalScore, _unset) ? this.finalScore : finalScore as int?,
+      completedAt: identical(completedAt, _unset)
+          ? this.completedAt
+          : completedAt as DateTime?,
       bookmarkedSlides: bookmarkedSlides ?? this.bookmarkedSlides,
-      practiceScore: practiceScore ?? this.practiceScore,
+      practiceScore: identical(practiceScore, _unset)
+          ? this.practiceScore
+          : practiceScore as int?,
     );
   }
 
@@ -79,6 +91,28 @@ class ProgressModel {
         'bookmarkedSlides': bookmarkedSlides,
         'practiceScore': practiceScore,
       };
+
+  /// Payload for a partial (`update`) write.
+  ///
+  /// Quiz scores are only included when this model actually carries them, so
+  /// saving slide progress from a possibly-stale copy can never delete scores
+  /// that another flow already wrote to the same node.
+  Map<String, dynamic> toUpdateJson() {
+    final data = <String, dynamic>{
+      'unitId': unitId,
+      'materialsCompleted': materialsCompleted,
+      'totalMaterials': totalMaterials,
+      // `null` deletes the key in RTDB, which is exactly what "not completed"
+      // and "no bookmarks" should mean.
+      'completedAt': completedAt?.toIso8601String(),
+      'bookmarkedSlides': bookmarkedSlides.isEmpty ? null : bookmarkedSlides,
+    };
+    if (pretestScore != null) data['pretestScore'] = pretestScore;
+    if (finalScore != null) data['finalScore'] = finalScore;
+    if (practiceScore != null) data['practiceScore'] = practiceScore;
+    if (checkpointScores.isNotEmpty) data['checkpointScores'] = checkpointScores;
+    return data;
+  }
 
   static int _asInt(dynamic value, {int fallback = 0}) {
     return switch (value) {
