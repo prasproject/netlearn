@@ -974,7 +974,10 @@ class _Base64Preview extends StatelessWidget {
           final bytes = base64Decode(base64Text);
           return ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: Image.memory(bytes, height: 80, width: double.infinity, fit: BoxFit.cover),
+            child: SizedBox(
+              width: double.infinity,
+              child: Image.memory(bytes, height: 80, fit: BoxFit.cover),
+            ),
           );
         } catch (_) {
           return const Text('Base64 tidak valid', style: TextStyle(color: Colors.red));

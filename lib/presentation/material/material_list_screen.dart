@@ -193,9 +193,22 @@ class MaterialListScreen extends ConsumerWidget {
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 12),
                         child: Pressable(
-                          enabled: !isLocked,
                           onTap: isLocked
-                              ? null
+                              ? () {
+                                  final prevUnit = units[index - 1];
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        '🔒 Selesaikan Unit ${prevUnit.unitNumber} — '
+                                        '${prevUnit.title} dulu untuk membuka unit ini.',
+                                      ),
+                                      behavior: SnackBarBehavior.floating,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                    ),
+                                  );
+                                }
                               : () {
                                   final resumeSlide = LearningProgressHelper.resumeSlideIndex(
                                     unitProgress,

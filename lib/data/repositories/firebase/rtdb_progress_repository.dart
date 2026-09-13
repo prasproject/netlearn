@@ -56,14 +56,12 @@ class RtdbProgressRepository extends ProgressRepository {
           if (existing == null) {
             return ProgressModel(unitId: m.id, materialsCompleted: 0, totalMaterials: m.totalSlides);
           }
-          if (existing.totalMaterials != m.totalSlides) {
-            final completed = existing.materialsCompleted.clamp(0, m.totalSlides);
-            return existing.copyWith(
-              totalMaterials: m.totalSlides,
-              materialsCompleted: completed,
-              completedAt: completed >= m.totalSlides ? existing.completedAt : null,
-            );
-          }
+          // Don't clamp/overwrite using SeedData's totalSlides here — SeedData is a
+          // static fallback list and can drift out of sync with the live material
+          // content (e.g. content edited in Firebase after the app shipped). Doing
+          // so previously truncated real progress back down on every reload.
+          // Reconciling totalMaterials with the *live* content is already handled by
+          // ProgressNotifier.syncAllMaterialTotals, which uses the actual MaterialModel.
           return existing;
         }(),
     ];
