@@ -100,11 +100,14 @@ class SimulationNotifier extends StateNotifier<SimulationState> {
     if (sims.isEmpty) return;
     final sim = sims.first;
     final scenario = sim.scenarios.isNotEmpty ? sim.scenarios.first : null;
+    final endpoints = _defaultEndpoints(sim);
     state = SimulationState(
       simulation: sim,
       allSimulations: sims,
       selectedPath: scenario?.correctPath ?? [],
       isLoaded: true,
+      packetSourceNodeId: endpoints.$1,
+      packetTargetNodeId: endpoints.$2,
       pcCount: sim.nodes.where((n) => n.type == NodeType.pc).length,
       switchCount: sim.nodes.where((n) => n.type == NodeType.switchDevice).length,
       routerCount: sim.nodes.where((n) => n.type == NodeType.router).length,
@@ -115,6 +118,7 @@ class SimulationNotifier extends StateNotifier<SimulationState> {
     if (state.isAnimating) return;
     final sim = state.allSimulations.firstWhere((s) => s.id == id, orElse: () => state.simulation);
     final scenario = sim.scenarios.isNotEmpty ? sim.scenarios.first : null;
+    final endpoints = _defaultEndpoints(sim);
     state = state.copyWith(
       simulation: sim,
       selectedPath: scenario?.correctPath ?? [],
@@ -122,12 +126,8 @@ class SimulationNotifier extends StateNotifier<SimulationState> {
       detailMessage: null,
       packetProgress: -1,
       connectStartNodeId: null,
-      packetSourceNodeId: sim.nodes.where((n) => n.type == NodeType.pc).isNotEmpty
-          ? sim.nodes.firstWhere((n) => n.type == NodeType.pc).id
-          : null,
-      packetTargetNodeId: sim.nodes.where((n) => n.type == NodeType.server || n.type == NodeType.pc).isNotEmpty
-          ? sim.nodes.firstWhere((n) => n.type == NodeType.server || n.type == NodeType.pc).id
-          : null,
+      packetSourceNodeId: endpoints.$1,
+      packetTargetNodeId: endpoints.$2,
       cableByLinkKey: {},
       pcCount: sim.nodes.where((n) => n.type == NodeType.pc).length,
       switchCount: sim.nodes.where((n) => n.type == NodeType.switchDevice).length,
@@ -135,11 +135,34 @@ class SimulationNotifier extends StateNotifier<SimulationState> {
     );
   }
 
-  /// Select a route path
+  /// A sensible starting sender/receiver pair for [sim]: the scenario's own
+  /// endpoints when one is defined (so they match the task text), otherwise
+  /// the first two distinct nodes. The old heuristic ("first PC" for both
+  /// source and the server-or-PC target) could pick the very same node for
+  /// both ends, which silently broke the very first "Kirim Paket" attempt.
+  (String?, String?) _defaultEndpoints(SimulationModel sim) {
+    final scenario = sim.scenarios.isNotEmpty ? sim.scenarios.first : null;
+    if (scenario != null) {
+      return (scenario.fromNodeId, scenario.toNodeId);
+    }
+    if (sim.nodes.isEmpty) return (null, null);
+    final source = sim.nodes.first.id;
+    final target = sim.nodes.firstWhere(
+      (n) => n.id != source,
+      orElse: () => sim.nodes.first,
+    ).id;
+    return (source, target == source ? null : target);
+  }
+
+  /// Select a route path, keeping the sender/receiver chips in sync with it —
+  /// otherwise switching routes here and picking endpoints in the inspector
+  /// could disagree about what is actually selected.
   void selectPath(List<String> path) {
     if (state.isAnimating) return;
     state = state.copyWith(
       selectedPath: path,
+      packetSourceNodeId: path.isNotEmpty ? path.first : state.packetSourceNodeId,
+      packetTargetNodeId: path.isNotEmpty ? path.last : state.packetTargetNodeId,
       statusMessage: 'Jalur dipilih: ${_pathLabel(path)}',
     );
   }
@@ -163,25 +186,50 @@ class SimulationNotifier extends StateNotifier<SimulationState> {
       return _sendPlaygroundPacket();
     }
 
-    if (state.isAnimating || state.selectedPath.isEmpty) return false;
+    if (state.isAnimating) return false;
 
-    state = state.copyWith(isAnimating: true, packetProgress: 0,
-      statusMessage: 'Mengirim paket...');
+    // Route by whichever sender/receiver are currently chosen — via BFS over
+    // the topology, same engine the playground uses — rather than always
+    // replaying whatever `selectedPath` happened to hold. Previously this
+    // method ignored the source/target the student picked in the inspector
+    // entirely, so "Jadikan pengirim/tujuan" had no visible effect: pressing
+    // Kirim Paket always animated the original scenario route regardless of
+    // what was chosen.
+    final sourceId = state.packetSourceNodeId;
+    final targetId = state.packetTargetNodeId;
+    List<String> path;
+    if (sourceId != null && targetId != null && sourceId != targetId) {
+      path = _findPath(sourceId, targetId);
+    } else {
+      path = state.selectedPath;
+    }
 
-    for (int i = 0; i < state.selectedPath.length; i++) {
+    if (path.isEmpty) {
+      state = state.copyWith(
+        statusMessage: 'Gagal: tidak ada jalur antar perangkat yang dipilih',
+        detailMessage: 'Pastikan pengirim dan tujuan terhubung.',
+      );
+      return false;
+    }
+
+    state = state.copyWith(
+      isAnimating: true,
+      selectedPath: path,
+      packetProgress: 0,
+      statusMessage: 'Mengirim paket...',
+    );
+
+    for (int i = 0; i < path.length; i++) {
       state = state.copyWith(packetProgress: i);
       await Future.delayed(const Duration(milliseconds: 700));
     }
 
-    final pathLabel = _pathLabel(state.selectedPath);
-    final routeLabel = state.selectedPath.length > 1 && state.selectedPath[1] == 'router1'
-        ? 'Router'
-        : 'Switch';
+    final pathLabel = _pathLabel(path);
     state = state.copyWith(
       isAnimating: false,
-      packetProgress: state.selectedPath.length - 1,
-      statusMessage: 'Status: Paket dikirim via $routeLabel ✓',
-      detailMessage: 'Hop: ${state.selectedPath.length - 1} | Jalur: $pathLabel',
+      packetProgress: path.length - 1,
+      statusMessage: 'Status: Paket dikirim ✓',
+      detailMessage: 'Hop: ${path.length - 1} | Jalur: $pathLabel',
     );
     return true;
   }
@@ -363,10 +411,30 @@ class SimulationNotifier extends StateNotifier<SimulationState> {
     );
   }
 
+  /// Choose the sender/receiver device. The cable route between them is
+  /// highlighted immediately (not just when "Kirim Paket" is pressed) so the
+  /// choice is visibly reflected on the canvas right away, in every topology
+  /// — not only the free-build Lab.
   void setPacketEndpoints({String? sourceId, String? targetId}) {
+    if (state.isAnimating) return;
+    final newSource = sourceId ?? state.packetSourceNodeId;
+    final newTarget = targetId ?? state.packetTargetNodeId;
+
+    if (newSource == null || newTarget == null || newSource == newTarget) {
+      state = state.copyWith(packetSourceNodeId: newSource, packetTargetNodeId: newTarget);
+      return;
+    }
+
+    final path = _findPath(newSource, newTarget);
     state = state.copyWith(
-      packetSourceNodeId: sourceId ?? state.packetSourceNodeId,
-      packetTargetNodeId: targetId ?? state.packetTargetNodeId,
+      packetSourceNodeId: newSource,
+      packetTargetNodeId: newTarget,
+      selectedPath: path,
+      statusMessage: path.isEmpty
+          ? 'Belum ada kabel yang menghubungkan kedua perangkat ini'
+          : 'Jalur dipilih: ${_pathLabel(path)}',
+      detailMessage: null,
+      packetProgress: -1,
     );
   }
 

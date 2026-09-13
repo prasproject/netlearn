@@ -11,6 +11,7 @@ import 'package:netlearn/data/models/simulation_model.dart';
 import 'package:netlearn/data/repositories/simulation_repository.dart';
 import 'package:netlearn/data/seed/seed_data.dart';
 import 'package:netlearn/domain/providers/repository_providers.dart';
+import 'package:netlearn/presentation/simulation/iso_canvas.dart';
 import 'package:netlearn/presentation/simulation/simulation_screen.dart';
 
 import 'fakes.dart';
@@ -58,6 +59,13 @@ void main() {
     }
   }
 
+  /// The isometric canvas, picked out from the several `CustomPaint` widgets
+  /// Flutter's own framework/Material widgets also use internally — matching
+  /// `find.byType(CustomPaint).first` grabs whichever of those happens to
+  /// come first in the tree, not necessarily our own painter.
+  Finder findIsoCanvas() =>
+      find.byWidgetPredicate((w) => w is CustomPaint && w.painter is IsoScenePainter);
+
   testWidgets('langkah misi maju setelah kamera digerakkan', (tester) async {
     tester.view.physicalSize = const Size(1200, 2200);
     tester.view.devicePixelRatio = 3;
@@ -65,7 +73,11 @@ void main() {
 
     await pumpScreen(tester);
 
-    expect(find.textContaining('Langkah 1/'), findsOneWidget, reason: 'mulai dari langkah pertama');
+    expect(
+      find.textContaining('Langkah 1 dari '),
+      findsOneWidget,
+      reason: 'mulai dari langkah pertama',
+    );
 
     // Memutar kanvas lewat tombol kamera harus menyelesaikan langkah pertama.
     await tester.tap(find.byIcon(Icons.rotate_right_rounded));
@@ -74,7 +86,7 @@ void main() {
     }
 
     expect(
-      find.textContaining('Langkah 1/'),
+      find.textContaining('Langkah 1 dari '),
       findsNothing,
       reason: 'langkah pertama sudah selesai, kartu harus pindah ke langkah berikutnya',
     );
@@ -86,17 +98,16 @@ void main() {
     addTearDown(tester.view.reset);
 
     await pumpScreen(tester);
-    expect(find.textContaining('Langkah 1/'), findsOneWidget);
+    expect(find.textContaining('Langkah 1 dari '), findsOneWidget);
 
     // Di browser desktop, menyeret di kanvas biasanya mengenai perangkat,
     // bukan area kosong — itu tetap harus dihitung sebagai menjelajah tampilan.
-    final canvas = find.byType(CustomPaint).first;
-    await tester.drag(canvas, const Offset(40, 25));
+    await tester.drag(findIsoCanvas(), const Offset(40, 25));
     for (var i = 0; i < 6; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
 
-    expect(find.textContaining('Langkah 1/'), findsNothing);
+    expect(find.textContaining('Langkah 1 dari '), findsNothing);
   });
 
   testWidgets('zoom dengan roda mouse menyelesaikan langkah pertama', (tester) async {
@@ -105,9 +116,9 @@ void main() {
     addTearDown(tester.view.reset);
 
     await pumpScreen(tester);
-    expect(find.textContaining('Langkah 1/'), findsOneWidget);
+    expect(find.textContaining('Langkah 1 dari '), findsOneWidget);
 
-    final center = tester.getCenter(find.byType(CustomPaint).first);
+    final center = tester.getCenter(findIsoCanvas());
     final pointer = TestPointer(1, PointerDeviceKind.mouse);
     await tester.sendEventToBinding(pointer.hover(center));
     await tester.sendEventToBinding(pointer.scroll(const Offset(0, -120)));
@@ -115,6 +126,43 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
     }
 
-    expect(find.textContaining('Langkah 1/'), findsNothing);
+    expect(find.textContaining('Langkah 1 dari '), findsNothing);
   });
+
+  testWidgets(
+    'status bar tidak pernah berada di atas tombol kamera dalam urutan tumpukan',
+    (tester) async {
+      // Regresi untuk bug "tombol kamera mati": status bar TIDAK interaktif,
+      // jadi ia tidak boleh datang setelah (di atas) tombol kamera dalam
+      // urutan children Stack — kalau tidak, ia memenangkan pengujian-tekan
+      // secara geometris tanpa benar-benar menangani sentuhan itu, dan
+      // sentuhan pada tombol di baliknya lenyap begitu saja.
+      tester.view.physicalSize = const Size(1200, 2200);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+
+      await pumpScreen(tester);
+
+      final stack = tester.widget<Stack>(
+        find.ancestor(
+          of: find.byKey(const Key('simStatusBar')),
+          matching: find.byType(Stack),
+        ),
+      );
+      final statusIndex = stack.children.indexWhere(
+        (w) => w is Positioned && w.child.key == const Key('simStatusBar'),
+      );
+      final cameraIndex = stack.children.indexWhere(
+        (w) => w is Positioned && w.child is Column,
+      );
+
+      expect(statusIndex, isNonNegative);
+      expect(cameraIndex, isNonNegative);
+      expect(
+        statusIndex,
+        lessThan(cameraIndex),
+        reason: 'status bar harus ditambahkan sebelum tombol kamera agar tidak menutupinya',
+      );
+    },
+  );
 }

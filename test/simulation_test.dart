@@ -122,4 +122,52 @@ void main() {
       expect(missions.length, 4);
     });
   });
+
+  group('Memilih pengirim/tujuan pada topologi tetap', () {
+    Future<SimulationNotifier> notifierFor(String id) async {
+      final notifier = SimulationNotifier(FakeSimulationRepository());
+      await Future<void>.delayed(Duration.zero);
+      notifier.setSimulation(id);
+      return notifier;
+    }
+
+    test('mengganti pengirim/tujuan langsung mengubah jalur yang disorot',
+        () async {
+      final notifier = await notifierFor('sim-star');
+      final before = notifier.state.selectedPath;
+
+      // Star: pc-left <-> switch-star <-> pc-right (bukan skenario bawaan).
+      notifier.setPacketEndpoints(sourceId: 'pc-left', targetId: 'pc-right');
+
+      expect(notifier.state.selectedPath, isNot(equals(before)));
+      expect(notifier.state.selectedPath, ['pc-left', 'switch-star', 'pc-right']);
+      notifier.dispose();
+    });
+
+    test('Kirim Paket mengikuti pengirim/tujuan yang baru dipilih, bukan default',
+        () async {
+      final notifier = await notifierFor('sim-star');
+      notifier.setPacketEndpoints(sourceId: 'pc-right', targetId: 'server-star');
+
+      final ok = await notifier.sendPacket();
+
+      expect(ok, isTrue);
+      expect(notifier.state.selectedPath, ['pc-right', 'switch-star', 'server-star']);
+      notifier.dispose();
+    });
+
+    test('default awal tidak pernah menjadikan pengirim == tujuan', () async {
+      for (final sim in SeedData.simulations) {
+        final notifier = await notifierFor(sim.id);
+        if (sim.nodes.length > 1) {
+          expect(
+            notifier.state.packetSourceNodeId,
+            isNot(equals(notifier.state.packetTargetNodeId)),
+            reason: '\${sim.id}: pengirim dan tujuan awal tidak boleh sama',
+          );
+        }
+        notifier.dispose();
+      }
+    });
+  });
 }

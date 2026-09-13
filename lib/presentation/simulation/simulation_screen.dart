@@ -234,7 +234,7 @@ class _SimulationScreenState extends ConsumerState<SimulationScreen> with Ticker
       body: Column(
         children: [
           _header(sim),
-          _goalBanner(sim),
+          _guidePanel(sim),
           Expanded(child: _canvas(sim)),
           if (selected != null) _inspector(sim, selected),
           _dock(sim),
@@ -338,34 +338,6 @@ class _SimulationScreenState extends ConsumerState<SimulationScreen> with Ticker
     );
   }
 
-  /// The scenario's objective, stated plainly and always on screen.
-  Widget _goalBanner(SimulationState sim) {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(12, 10, 12, 0),
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: AppColors.secondaryGreenSurface,
-        borderRadius: BorderRadius.circular(AppDimensions.radiusLarge),
-        border: Border.all(color: AppColors.secondaryGreenAccent),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.flag_rounded, size: 16, color: AppColors.secondaryGreen),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              sim.simulation.task,
-              style: AppTextStyles.labelSmall.copyWith(
-                color: AppColors.secondaryGreenDark,
-                height: 1.35,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   // ─── Canvas ───
 
   Widget _canvas(SimulationState sim) {
@@ -417,9 +389,15 @@ class _SimulationScreenState extends ConsumerState<SimulationScreen> with Ticker
                   ),
                 ),
               ),
-              Positioned(left: 12, top: 12, right: 64, child: _missionCard(sim)),
-              Positioned(right: 12, top: 12, child: _cameraTools()),
+              // The status bar is purely informational (no tap target of its
+              // own), so it must come BEFORE the camera buttons in the Stack.
+              // On a short canvas the two can overlap geometrically, and a
+              // later Stack child wins hit-testing regardless of whether it
+              // actually handles the tap — with the old order, the status bar
+              // silently swallowed taps meant for the camera buttons whenever
+              // that overlap happened, making them dead with no visible cause.
               Positioned(left: 12, right: 12, bottom: 12, child: _statusBar(sim)),
+              Positioned(right: 12, top: 12, child: _cameraTools()),
             ],
           ),
         );
@@ -457,31 +435,29 @@ class _SimulationScreenState extends ConsumerState<SimulationScreen> with Ticker
         tool(Icons.rotate_right_rounded, () => _nudgeCamera(rotate: 0.35), tooltip: 'Putar kanan'),
         tool(Icons.zoom_in_rounded, () => _nudgeCamera(zoom: 1.2), tooltip: 'Perbesar'),
         tool(Icons.zoom_out_rounded, () => _nudgeCamera(zoom: 0.83), tooltip: 'Perkecil'),
-        tool(_showGrid ? Icons.grid_on_rounded : Icons.grid_off_rounded, () {
-          setState(() => _showGrid = !_showGrid);
-          _markViewExplored();
-        }, tooltip: 'Garis lantai'),
-        tool(Icons.center_focus_strong_rounded, () {
-          setState(() => _camera = const IsoCamera());
-          _markViewExplored();
-        }, tooltip: 'Kembalikan tampilan'),
       ],
     );
   }
 
   // ─── Mission checklist ───
 
-  Widget _missionCard(SimulationState sim) {
+  /// Guide panel: the scenario's goal plus the current guided step, in one
+  /// fixed place between the header and the canvas.
+  ///
+  /// This used to be two separate pieces — a goal banner, and a mission card
+  /// that floated, semi-transparent, on top of the isometric scene. Reading
+  /// instructions layered over a moving 3D drawing (and not knowing there was
+  /// a second, different explanation elsewhere) was a big part of what made
+  /// the guidance hard to follow. One panel, opaque, out of the canvas's way.
+  Widget _guidePanel(SimulationState sim) {
     final missions = _missions;
     final index = _currentMissionIndex;
     final allDone = index >= missions.length;
 
-    return AnimatedContainer(
-      duration: AppMotion.normal,
-      curve: AppMotion.enter,
-      padding: const EdgeInsets.all(10),
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 10, 12, 0),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.96),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(AppDimensions.radiusXL),
         border: Border.all(
           color: allDone ? AppColors.secondaryGreenLight : AppColors.secondaryGreenAccent,
@@ -491,111 +467,167 @@ class _SimulationScreenState extends ConsumerState<SimulationScreen> with Ticker
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Pressable(
-            onTap: () => setState(() => _missionsOpen = !_missionsOpen),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(
-                  allDone ? Icons.emoji_events_rounded : missions[index].icon,
-                  size: 16,
-                  color: allDone ? AppColors.gold : AppColors.secondaryGreen,
-                ),
+                const Icon(Icons.flag_rounded, size: 15, color: AppColors.secondaryGreen),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    allDone
-                        ? 'Semua langkah selesai 🎉'
-                        : 'Langkah ${index + 1}/${missions.length}: ${missions[index].title}',
+                    sim.simulation.task,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                     style: AppTextStyles.labelSmall.copyWith(
-                      color: AppColors.textPrimary,
-                      fontWeight: FontWeight.w900,
+                      color: AppColors.secondaryGreenDark,
+                      fontWeight: FontWeight.w700,
+                      height: 1.35,
                     ),
                   ),
                 ),
-                Icon(
-                  _missionsOpen
-                      ? Icons.keyboard_arrow_up_rounded
-                      : Icons.keyboard_arrow_down_rounded,
-                  size: 18,
-                  color: AppColors.textMuted,
-                ),
               ],
+            ),
+          ),
+          const Divider(height: 1, color: AppColors.divider),
+          Pressable(
+            onTap: () => setState(() => _missionsOpen = !_missionsOpen),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+              child: Row(
+                children: [
+                  Container(
+                    width: 26,
+                    height: 26,
+                    decoration: BoxDecoration(
+                      color: allDone
+                          ? AppColors.goldSurface
+                          : AppColors.secondaryGreenSurface,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(
+                      allDone ? Icons.emoji_events_rounded : missions[index].icon,
+                      size: 15,
+                      color: allDone ? AppColors.goldDark : AppColors.secondaryGreen,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          allDone
+                              ? 'Semua langkah selesai 🎉'
+                              : 'Langkah ${index + 1} dari ${missions.length}',
+                          style: AppTextStyles.labelTiny.copyWith(
+                            color: AppColors.textMuted,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        if (!allDone)
+                          Text(
+                            missions[index].title,
+                            style: AppTextStyles.labelSmall.copyWith(
+                              color: AppColors.textPrimary,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  Icon(
+                    _missionsOpen
+                        ? Icons.keyboard_arrow_up_rounded
+                        : Icons.keyboard_arrow_down_rounded,
+                    size: 20,
+                    color: AppColors.textMuted,
+                  ),
+                ],
+              ),
             ),
           ),
           AnimatedCrossFade(
             duration: AppMotion.normal,
             crossFadeState: _missionsOpen ? CrossFadeState.showFirst : CrossFadeState.showSecond,
-            firstChild: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: 8),
-                if (!allDone) ...[
-                  Text(
-                    missions[index].hint,
-                    style: AppTextStyles.labelSmall.copyWith(
-                      color: AppColors.textSecondary,
-                      height: 1.45,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Pressable(
-                    onTap: () => _openTab(missions[index].tab),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                      decoration: BoxDecoration(
-                        color: AppColors.secondaryGreen,
-                        borderRadius: BorderRadius.circular(9),
+            firstChild: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (!allDone) ...[
+                    Text(
+                      missions[index].hint,
+                      style: AppTextStyles.labelSmall.copyWith(
+                        color: AppColors.textSecondary,
+                        height: 1.45,
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          // Flexible: a long action label must not overflow the
-                          // card on a narrow phone.
-                          Flexible(
-                            child: Text(
-                              missions[index].action,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: AppTextStyles.labelTiny.copyWith(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w800,
+                    ),
+                    const SizedBox(height: 10),
+                    Pressable(
+                      onTap: () => _openTab(missions[index].tab),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                        decoration: BoxDecoration(
+                          color: AppColors.secondaryGreen,
+                          borderRadius: BorderRadius.circular(9),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // Flexible: a long action label must not overflow
+                            // the panel on a narrow phone.
+                            Flexible(
+                              child: Text(
+                                missions[index].action,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppTextStyles.labelSmall.copyWith(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w800,
+                                ),
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 5),
-                          const Icon(Icons.arrow_forward_rounded, size: 12, color: Colors.white),
-                        ],
-                      ),
-                    ),
-                  ),
-                ] else
-                  Text(
-                    'Kamu sudah mencoba seluruh alur simulasi ini. Coba topologi lain, atau rancang jaringanmu sendiri di Lab Bebas.',
-                    style: AppTextStyles.labelSmall.copyWith(
-                      color: AppColors.textSecondary,
-                      height: 1.45,
-                    ),
-                  ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    for (var i = 0; i < missions.length; i++)
-                      Expanded(
-                        child: AnimatedContainer(
-                          duration: AppMotion.normal,
-                          height: 5,
-                          margin: const EdgeInsets.only(right: 3),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(99),
-                            color: missions[i].isDone(sim, _stats)
-                                ? AppColors.secondaryGreenLight
-                                : AppColors.divider,
-                          ),
+                            const SizedBox(width: 6),
+                            const Icon(
+                              Icons.arrow_forward_rounded,
+                              size: 14,
+                              color: Colors.white,
+                            ),
+                          ],
                         ),
                       ),
-                  ],
-                ),
-              ],
+                    ),
+                  ] else
+                    Text(
+                      'Kamu sudah mencoba seluruh alur simulasi ini. Coba topologi lain, '
+                      'atau rancang jaringanmu sendiri di Lab Bebas.',
+                      style: AppTextStyles.labelSmall.copyWith(
+                        color: AppColors.textSecondary,
+                        height: 1.45,
+                      ),
+                    ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      for (var i = 0; i < missions.length; i++)
+                        Expanded(
+                          child: AnimatedContainer(
+                            duration: AppMotion.normal,
+                            height: 5,
+                            margin: const EdgeInsets.only(right: 3),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(99),
+                              color: missions[i].isDone(sim, _stats)
+                                  ? AppColors.secondaryGreenLight
+                                  : AppColors.divider,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
             ),
             secondChild: const SizedBox(width: double.infinity),
           ),
@@ -633,6 +665,7 @@ class _SimulationScreenState extends ConsumerState<SimulationScreen> with Ticker
         : AppColors.textSecondary;
 
     return AnimatedContainer(
+      key: const Key('simStatusBar'),
       duration: AppMotion.normal,
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
@@ -814,10 +847,19 @@ class _SimulationScreenState extends ConsumerState<SimulationScreen> with Ticker
 
   // ─── Bottom dock ───
 
+  static const _dockIcons = [
+    Icons.construction_rounded,
+    Icons.send_rounded,
+    Icons.visibility_rounded,
+  ];
+
   Widget _dock(SimulationState sim) {
     final tabs = _isPlayground
-        ? const ['1. Bangun', '2. Kirim', 'Tampilan']
+        ? const ['Bangun', 'Kirim', 'Tampilan']
         : const ['Kirim Paket', 'Tampilan'];
+    // The build tab only exists in the free-build lab, so the fixed
+    // topologies' tabs borrow the send/view icons rather than the full set.
+    final icons = _isPlayground ? _dockIcons : _dockIcons.sublist(1);
     final tab = _dockTab.clamp(0, tabs.length - 1);
 
     return Container(
@@ -832,30 +874,47 @@ class _SimulationScreenState extends ConsumerState<SimulationScreen> with Ticker
           padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
           child: Column(
             children: [
+              // Segmented control, not a bottom nav bar: it switches which
+              // toolset is showing below, it doesn't change screens. Icons
+              // make that legible at a glance instead of relying on reading
+              // short, easy-to-skim-past text pills.
               Row(
                 children: [
                   for (var i = 0; i < tabs.length; i++)
                     Expanded(
                       child: Pressable(
-                        onTap: () => setState(() => _dockTab = i),
+                        onTap: () {
+                          if (i == tab) return;
+                          ref.read(audioProvider.notifier).playSfx(SoundEffect.buttonTap);
+                          setState(() => _dockTab = i);
+                        },
                         child: AnimatedContainer(
                           duration: AppMotion.fast,
                           margin: const EdgeInsets.symmetric(horizontal: 3),
-                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          padding: const EdgeInsets.symmetric(vertical: 9),
                           decoration: BoxDecoration(
                             color: i == tab
                                 ? AppColors.secondaryGreen
                                 : AppColors.secondaryGreenSurface,
                             borderRadius: BorderRadius.circular(10),
                           ),
-                          child: Center(
-                            child: Text(
-                              tabs[i],
-                              style: AppTextStyles.labelSmall.copyWith(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                icons[i],
+                                size: 17,
                                 color: i == tab ? Colors.white : AppColors.secondaryGreen,
-                                fontWeight: FontWeight.w800,
                               ),
-                            ),
+                              const SizedBox(height: 2),
+                              Text(
+                                tabs[i],
+                                style: AppTextStyles.labelTiny.copyWith(
+                                  color: i == tab ? Colors.white : AppColors.secondaryGreen,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),
