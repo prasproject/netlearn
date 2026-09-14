@@ -30,7 +30,8 @@ class _StudentMonitorScreenState extends ConsumerState<StudentMonitorScreen> {
     return _students.where((student) {
       return student.displayName.toLowerCase().contains(keyword) ||
           student.id.toLowerCase().contains(keyword) ||
-          student.phoneNumber.toLowerCase().contains(keyword);
+          student.phoneNumber.toLowerCase().contains(keyword) ||
+          (student.schoolName ?? '').toLowerCase().contains(keyword);
     }).toList();
   }
 
@@ -41,7 +42,8 @@ class _StudentMonitorScreenState extends ConsumerState<StudentMonitorScreen> {
       final student = entry.user;
       return student.displayName.toLowerCase().contains(keyword) ||
           student.id.toLowerCase().contains(keyword) ||
-          student.phoneNumber.toLowerCase().contains(keyword);
+          student.phoneNumber.toLowerCase().contains(keyword) ||
+          (student.schoolName ?? '').toLowerCase().contains(keyword);
     }).toList();
   }
 
@@ -122,6 +124,7 @@ class _StudentMonitorScreenState extends ConsumerState<StudentMonitorScreen> {
     final nameController = TextEditingController(text: user?.displayName ?? '');
     final usernameController = TextEditingController(text: user?.id ?? '');
     final phoneController = TextEditingController(text: user?.phoneNumber ?? '');
+    final schoolController = TextEditingController(text: user?.schoolName ?? '');
     final passwordController = TextEditingController(text: user?.password ?? '');
 
     final saved = await showDialog<bool>(
@@ -168,6 +171,17 @@ class _StudentMonitorScreenState extends ConsumerState<StudentMonitorScreen> {
                   ),
                   const SizedBox(height: 12),
                   TextFormField(
+                    controller: schoolController,
+                    textCapitalization: TextCapitalization.words,
+                    decoration: const InputDecoration(
+                      labelText: 'Asal sekolah',
+                    ),
+                    validator: (value) => (value == null || value.trim().isEmpty)
+                        ? 'Asal sekolah wajib diisi'
+                        : null,
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
                     controller: passwordController,
                     obscureText: true,
                     decoration: InputDecoration(
@@ -200,6 +214,7 @@ class _StudentMonitorScreenState extends ConsumerState<StudentMonitorScreen> {
                     final updatedUser = user.copyWith(
                       displayName: nameController.text.trim(),
                       phoneNumber: phoneController.text.trim(),
+                      schoolName: schoolController.text.trim(),
                       password: passwordController.text.trim().isEmpty
                           ? user.password
                           : passwordController.text.trim(),
@@ -212,6 +227,7 @@ class _StudentMonitorScreenState extends ConsumerState<StudentMonitorScreen> {
                           username: usernameController.text.trim(),
                           phoneNumber: phoneController.text.trim(),
                           password: passwordController.text.trim(),
+                          schoolName: schoolController.text.trim(),
                         );
                   }
                   if (!dialogContext.mounted) return;
@@ -233,6 +249,7 @@ class _StudentMonitorScreenState extends ConsumerState<StudentMonitorScreen> {
     nameController.dispose();
     usernameController.dispose();
     phoneController.dispose();
+    schoolController.dispose();
     passwordController.dispose();
 
     if (saved == true) {
@@ -240,6 +257,60 @@ class _StudentMonitorScreenState extends ConsumerState<StudentMonitorScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(isEdit ? 'User berhasil diperbarui' : 'User berhasil ditambahkan')),
+      );
+    }
+  }
+
+  /// Reset progres satu siswa dari sisi admin.
+  ///
+  /// Pre-Test hanya bisa dikerjakan sekali, jadi kalau siswa salah mengerjakan
+  /// (atau perangkatnya dipakai orang lain) admin perlu jalan untuk membuka
+  /// kembali Pre-Test tanpa harus menghapus akunnya.
+  Future<void> _confirmResetProgress(UserModel user) async {
+    final shouldReset = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Reset data belajar?'),
+        content: Text(
+          'Semua progres materi, skor Pre-Test/Post-Test, latihan, badge, XP, '
+          'dan streak milik "${user.displayName}" akan dihapus. Pre-Test akan '
+          'terbuka lagi untuk siswa ini. Tindakan ini tidak dapat dibatalkan.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Batal'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.error),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Reset'),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldReset != true) return;
+    try {
+      await ref.read(progressRepositoryProvider).resetAllProgress(user.id);
+      await ref.read(authRepositoryProvider).updateUser(
+            user.copyWith(
+              xp: 0,
+              level: 1,
+              streak: 0,
+              unlockedBadgeIds: const [],
+              lastActive: DateTime.now(),
+            ),
+          );
+      await _loadStudents();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Data belajar ${user.displayName} berhasil direset')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceAll('Exception: ', ''))),
       );
     }
   }
@@ -331,6 +402,8 @@ class _StudentMonitorScreenState extends ConsumerState<StudentMonitorScreen> {
                       Text(user.displayName, style: AppTextStyles.sectionTitle),
                       const SizedBox(height: 4),
                       Text('Username: ${user.id}', style: AppTextStyles.bodySmall),
+                      if ((user.schoolName ?? '').trim().isNotEmpty)
+                        Text('Sekolah: ${user.schoolName}', style: AppTextStyles.bodySmall),
                       const SizedBox(height: 14),
                       Wrap(
                         spacing: 8,
@@ -551,7 +624,7 @@ class _StudentMonitorScreenState extends ConsumerState<StudentMonitorScreen> {
                           controller: _searchController,
                           onChanged: (value) => setState(() => _searchQuery = value),
                           decoration: InputDecoration(
-                            hintText: 'Cari user (nama, username, WA)',
+                            hintText: 'Cari user (nama, username, WA, sekolah)',
                             prefixIcon: const Icon(Icons.search),
                             suffixIcon: _searchQuery.isEmpty
                                 ? null
@@ -604,9 +677,11 @@ class _StudentMonitorScreenState extends ConsumerState<StudentMonitorScreen> {
                         ),
                         title: Text(student.displayName, style: AppTextStyles.heading),
                         subtitle: Text(
-                          'Username: ${student.id} • WA: ${student.phoneNumber}',
+                          'Username: ${student.id} • WA: ${student.phoneNumber}'
+                          '${(student.schoolName ?? '').trim().isEmpty ? '' : '\n${student.schoolName}'}',
                           style: AppTextStyles.bodySmall,
                         ),
+                        isThreeLine: (student.schoolName ?? '').trim().isNotEmpty,
                         trailing: PopupMenuButton<String>(
                           onSelected: (value) {
                             if (value == 'achievement') {
@@ -615,6 +690,10 @@ class _StudentMonitorScreenState extends ConsumerState<StudentMonitorScreen> {
                             }
                             if (value == 'edit') {
                               _showUserForm(user: student);
+                              return;
+                            }
+                            if (value == 'reset') {
+                              _confirmResetProgress(student);
                               return;
                             }
                             if (value == 'delete') {
@@ -629,6 +708,10 @@ class _StudentMonitorScreenState extends ConsumerState<StudentMonitorScreen> {
                             PopupMenuItem(
                               value: 'edit',
                               child: Text('Edit user'),
+                            ),
+                            PopupMenuItem(
+                              value: 'reset',
+                              child: Text('Reset data belajar'),
                             ),
                             PopupMenuItem(
                               value: 'delete',

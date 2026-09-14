@@ -374,7 +374,11 @@ class _ManageMaterialsScreenState extends ConsumerState<ManageMaterialsScreen>
                     const SizedBox(height: 12),
                     TextField(
                       controller: _qExplanationC[i],
-                      decoration: const InputDecoration(labelText: 'Penjelasan (opsional)'),
+                      decoration: const InputDecoration(
+                        labelText: 'Penjelasan (opsional)',
+                        helperText: 'Ditampilkan ke siswa bersama kunci jawaban setelah menjawab',
+                        helperMaxLines: 2,
+                      ),
                       maxLines: 2,
                     ),
                     const SizedBox(height: 16),
@@ -604,7 +608,11 @@ class _ManageMaterialsScreenState extends ConsumerState<ManageMaterialsScreen>
                     const SizedBox(height: 12),
                     TextField(
                       controller: _pExplanationC[i],
-                      decoration: const InputDecoration(labelText: 'Penjelasan (opsional)'),
+                      decoration: const InputDecoration(
+                        labelText: 'Penjelasan (opsional)',
+                        helperText: 'Ditampilkan ke siswa bersama kunci jawaban setelah menjawab',
+                        helperMaxLines: 2,
+                      ),
                       maxLines: 2,
                     ),
                     const SizedBox(height: 16),

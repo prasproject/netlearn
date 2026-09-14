@@ -87,6 +87,7 @@ class MockAuthRepository extends AuthRepository {
     required String username,
     required String phoneNumber,
     required String password,
+    String? schoolName,
   }) async {
     final exists = _users.any((u) => u.id == username);
     if (exists) {
@@ -97,6 +98,7 @@ class MockAuthRepository extends AuthRepository {
       id: username,
       displayName: name,
       phoneNumber: phoneNumber,
+      schoolName: schoolName,
       password: password,
       role: 'student',
       lastActive: DateTime.now(),

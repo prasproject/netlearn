@@ -40,7 +40,8 @@ class _CombinedReportingScreenState extends ConsumerState<CombinedReportingScree
         : _rows.where((row) {
             return row.user.displayName.toLowerCase().contains(keyword) ||
                 row.user.id.toLowerCase().contains(keyword) ||
-                row.user.phoneNumber.toLowerCase().contains(keyword);
+                row.user.phoneNumber.toLowerCase().contains(keyword) ||
+                (row.user.schoolName ?? '').toLowerCase().contains(keyword);
           }).toList();
 
     rows.sort((a, b) {
@@ -164,6 +165,8 @@ class _CombinedReportingScreenState extends ConsumerState<CombinedReportingScree
                 const SizedBox(height: 4),
                 Text('Username: ${user.id}', style: AppTextStyles.bodySmall),
                 Text('WA: ${user.phoneNumber}', style: AppTextStyles.bodySmall),
+                if ((user.schoolName ?? '').trim().isNotEmpty)
+                  Text('Sekolah: ${user.schoolName}', style: AppTextStyles.bodySmall),
                 const SizedBox(height: 10),
                 Wrap(
                   spacing: 8,
@@ -236,6 +239,7 @@ class _CombinedReportingScreenState extends ConsumerState<CombinedReportingScree
         'Nama',
         'Username',
         'WA',
+        'Sekolah',
         'Pretest',
         'Posttest',
         'Progress',
@@ -248,6 +252,7 @@ class _CombinedReportingScreenState extends ConsumerState<CombinedReportingScree
               row.user.displayName,
               row.user.id,
               row.user.phoneNumber,
+              row.user.schoolName ?? '-',
               '${row.pretestScore}',
               '${row.posttestScore}',
               '${row.progressPercent.toStringAsFixed(1)}%',
@@ -309,6 +314,7 @@ class _CombinedReportingScreenState extends ConsumerState<CombinedReportingScree
         'Nama',
         'Username',
         'No WA',
+        'Sekolah',
         'Pretest',
         'Posttest',
         'Progress %',
@@ -321,6 +327,7 @@ class _CombinedReportingScreenState extends ConsumerState<CombinedReportingScree
           xl.TextCellValue(row.user.displayName),
           xl.TextCellValue(row.user.id),
           xl.TextCellValue(row.user.phoneNumber),
+          xl.TextCellValue(row.user.schoolName ?? '-'),
           xl.IntCellValue(row.pretestScore),
           xl.IntCellValue(row.posttestScore),
           xl.DoubleCellValue(row.progressPercent),
@@ -419,6 +426,7 @@ class _CombinedReportingScreenState extends ConsumerState<CombinedReportingScree
                   DataColumn(label: Text('Nama')),
                   DataColumn(label: Text('User')),
                   DataColumn(label: Text('WA')),
+                  DataColumn(label: Text('Sekolah')),
                   DataColumn(label: Text('Pre')),
                   DataColumn(label: Text('Post')),
                   DataColumn(label: Text('Progress')),
@@ -438,6 +446,7 @@ class _CombinedReportingScreenState extends ConsumerState<CombinedReportingScree
                       DataCell(Text(row.user.displayName)),
                       DataCell(Text(row.user.id)),
                       DataCell(Text(row.user.phoneNumber)),
+                      DataCell(Text(row.user.schoolName ?? '-')),
                       DataCell(Text('${row.pretestScore}')),
                       DataCell(Text('${row.posttestScore}')),
                       DataCell(Text('${row.progressPercent.toStringAsFixed(1)}%')),
@@ -489,7 +498,7 @@ class _CombinedReportingScreenState extends ConsumerState<CombinedReportingScree
                           controller: _searchController,
                           onChanged: (value) => setState(() => _searchQuery = value),
                           decoration: InputDecoration(
-                            hintText: 'Cari nama, username, atau WA',
+                            hintText: 'Cari nama, username, WA, atau sekolah',
                             prefixIcon: const Icon(Icons.search),
                             suffixIcon: _searchQuery.trim().isEmpty
                                 ? null

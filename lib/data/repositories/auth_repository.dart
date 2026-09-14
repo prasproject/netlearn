@@ -25,6 +25,7 @@ abstract class AuthRepository {
     required String username,
     required String phoneNumber,
     required String password,
+    String? schoolName,
   });
   Future<void> deleteUser(String userId);
   Future<List<UserModel>> getAllUsers();

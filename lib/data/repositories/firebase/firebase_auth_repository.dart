@@ -102,12 +102,14 @@ class FirebaseAuthRepository extends AuthRepository {
     required String username,
     required String phoneNumber,
     required String password,
+    String? schoolName,
   }) async {
     return register(
       name: name,
       username: username,
       phoneNumber: phoneNumber,
       password: password,
+      schoolName: schoolName,
     );
   }
 
