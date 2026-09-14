@@ -40,6 +40,7 @@ class MockAuthRepository extends AuthRepository {
     required String username,
     required String phoneNumber,
     required String password,
+    String? schoolName,
   }) async {
     // Simulate network delay
     await Future.delayed(const Duration(milliseconds: 1000));
@@ -52,6 +53,7 @@ class MockAuthRepository extends AuthRepository {
       id: 'user-${DateTime.now().millisecondsSinceEpoch}',
       displayName: name,
       phoneNumber: phoneNumber,
+      schoolName: schoolName,
       lastActive: DateTime.now(),
       createdAt: DateTime.now(),
       role: 'student',

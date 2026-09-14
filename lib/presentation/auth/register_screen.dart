@@ -21,6 +21,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   final _nameController = TextEditingController();
   final _usernameController = TextEditingController();
   final _phoneController = TextEditingController();
+  final _schoolController = TextEditingController();
   final _passwordController = TextEditingController();
 
   @override
@@ -28,6 +29,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     _nameController.dispose();
     _usernameController.dispose();
     _phoneController.dispose();
+    _schoolController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
@@ -37,13 +39,20 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     final name = _nameController.text.trim();
     final username = _usernameController.text.trim();
     final phoneNumber = _phoneController.text.trim();
+    final schoolName = _schoolController.text.trim();
     final password = _passwordController.text.trim();
-    
-    if (name.isEmpty || username.isEmpty || phoneNumber.isEmpty || password.isEmpty) return;
-    
+
+    if (name.isEmpty ||
+        username.isEmpty ||
+        phoneNumber.isEmpty ||
+        schoolName.isEmpty ||
+        password.isEmpty) {
+      return;
+    }
+
     final success = await ref
         .read(authProvider.notifier)
-        .register(name, username, phoneNumber, password);
+        .register(name, username, phoneNumber, password, schoolName: schoolName);
     if (success && mounted) {
       // New accounts always start with the welcome tour.
       context.go('/onboarding');
@@ -119,7 +128,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
         Text('Buat Akun', style: AppTextStyles.screenTitle.copyWith(color: AppColors.secondaryGreen)),
         const SizedBox(height: 8),
         Text(
-          'Masukkan nama, username, nomor WhatsApp, dan password Anda.',
+          'Masukkan nama, username, nomor WhatsApp, asal sekolah, dan password Anda.',
           style: AppTextStyles.bodySmall.copyWith(color: AppColors.textMuted),
         ),
         const SizedBox(height: 20),
@@ -147,6 +156,16 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
             hintText: '08xxxxxxxxxx',
             labelText: 'Nomor WhatsApp',
             prefixIcon: Icon(Icons.phone_android_rounded, size: 20),
+          ),
+        ),
+        const SizedBox(height: 14),
+        TextField(
+          controller: _schoolController,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(
+            hintText: 'Contoh: SMA Negeri 1 Sleman',
+            labelText: 'Asal Sekolah',
+            prefixIcon: Icon(Icons.school_outlined, size: 20),
           ),
         ),
         const SizedBox(height: 14),

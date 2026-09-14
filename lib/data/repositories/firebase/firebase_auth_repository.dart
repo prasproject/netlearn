@@ -31,6 +31,7 @@ class FirebaseAuthRepository extends AuthRepository {
     required String username,
     required String phoneNumber,
     required String password,
+    String? schoolName,
   }) async {
     try {
       final email = '$username@netlearn.com';
@@ -49,6 +50,7 @@ class FirebaseAuthRepository extends AuthRepository {
         userCredential.user!,
         overrideName: name,
         overridePhone: phoneNumber,
+        overrideSchool: schoolName,
       );
     } catch (e) {
       throw Exception('Gagal mendaftar: $e');
@@ -121,11 +123,17 @@ class FirebaseAuthRepository extends AuthRepository {
     return [current];
   }
 
-  UserModel _mapFirebaseUser(User fbUser, {String? overrideName, String? overridePhone}) {
+  UserModel _mapFirebaseUser(
+    User fbUser, {
+    String? overrideName,
+    String? overridePhone,
+    String? overrideSchool,
+  }) {
     return UserModel(
       id: fbUser.uid,
       displayName: overrideName ?? fbUser.displayName ?? 'Pengguna',
       phoneNumber: overridePhone ?? fbUser.phoneNumber ?? '',
+      schoolName: overrideSchool,
       lastActive: DateTime.now(),
       createdAt: fbUser.metadata.creationTime ?? DateTime.now(),
     );

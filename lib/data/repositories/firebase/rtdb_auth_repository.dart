@@ -128,6 +128,7 @@ class RtdbAuthRepository extends AuthRepository {
     required String username,
     required String phoneNumber,
     required String password,
+    String? schoolName,
   }) async {
     try {
       final snapshot = await _db.child(username).get();
@@ -139,6 +140,7 @@ class RtdbAuthRepository extends AuthRepository {
         id: username,
         displayName: name,
         phoneNumber: phoneNumber,
+        schoolName: schoolName,
         password: password,
         lastActive: DateTime.now(),
         createdAt: DateTime.now(),

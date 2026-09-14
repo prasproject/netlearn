@@ -170,8 +170,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
     String name,
     String username,
     String phoneNumber,
-    String password,
-  ) async {
+    String password, {
+    String? schoolName,
+  }) async {
     state = state.copyWith(isLoading: true, authError: null);
 
     try {
@@ -180,6 +181,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
         username: username,
         phoneNumber: phoneNumber,
         password: password,
+        schoolName: schoolName,
       );
       if (user != null) {
         state = AuthState(

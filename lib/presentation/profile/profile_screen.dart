@@ -94,6 +94,21 @@ class ProfileScreen extends ConsumerWidget {
                           style: AppTextStyles.bodySmall.copyWith(color: Colors.white60)),
                       ],
                     ),
+                    if ((user.schoolName ?? '').trim().isNotEmpty)
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.school_outlined, size: 14, color: Colors.white60),
+                          const SizedBox(width: 4),
+                          Flexible(
+                            child: Text(
+                              user.schoolName!,
+                              textAlign: TextAlign.center,
+                              style: AppTextStyles.bodySmall.copyWith(color: Colors.white60),
+                            ),
+                          ),
+                        ],
+                      ),
                     const SizedBox(height: 10),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,

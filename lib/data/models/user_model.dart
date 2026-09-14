@@ -5,6 +5,7 @@ class UserModel {
   final String id;
   final String displayName;
   final String phoneNumber; // WhatsApp number
+  final String? schoolName; // Asal sekolah, diisi saat registrasi
   final String? photoUrl;
   final int xp;
   final int level;
@@ -20,6 +21,7 @@ class UserModel {
     required this.id,
     required this.displayName,
     required this.phoneNumber,
+    this.schoolName,
     this.photoUrl,
     this.xp = 0,
     this.level = 1,
@@ -65,6 +67,7 @@ class UserModel {
   UserModel copyWith({
     String? displayName,
     String? phoneNumber,
+    String? schoolName,
     String? photoUrl,
     int? xp,
     int? level,
@@ -79,6 +82,7 @@ class UserModel {
       id: id,
       displayName: displayName ?? this.displayName,
       phoneNumber: phoneNumber ?? this.phoneNumber,
+      schoolName: schoolName ?? this.schoolName,
       photoUrl: photoUrl ?? this.photoUrl,
       xp: xp ?? this.xp,
       level: level ?? this.level,
@@ -96,6 +100,7 @@ class UserModel {
         'id': id,
         'displayName': displayName,
         'phoneNumber': phoneNumber,
+        'schoolName': schoolName,
         'photoUrl': photoUrl,
         'xp': xp,
         'level': level,
@@ -117,6 +122,7 @@ class UserModel {
       id: json['id'] as String,
       displayName: json['displayName'] as String,
       phoneNumber: json['phoneNumber'] as String,
+      schoolName: json['schoolName'] as String?,
       photoUrl: json['photoUrl'] as String?,
       xp: parsedXp,
       level: parsedLevel,

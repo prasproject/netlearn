@@ -96,6 +96,7 @@ class FakeAuthRepository extends AuthRepository {
     required String username,
     required String phoneNumber,
     required String password,
+    String? schoolName,
   }) async => user;
 
   @override
