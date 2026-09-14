@@ -77,6 +77,7 @@ class HomeScreen extends ConsumerWidget {
                   ).animate().fadeIn(delay: 100.ms),
                   _buildMenuGrid(
                     context,
+                    ref,
                     hasPretestScore,
                   ).animate().fadeIn(delay: 200.ms, duration: 400.ms),
                   const SizedBox(height: 20),
@@ -251,24 +252,6 @@ class HomeScreen extends ConsumerWidget {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Container(
-                            width: 36,
-                            height: 36,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: Colors.white.withValues(alpha: 0.18),
-                              border: Border.all(color: Colors.white24, width: 1),
-                            ),
-                            child: IconButton(
-                              tooltip: 'Panduan',
-                              padding: EdgeInsets.zero,
-                              iconSize: 18,
-                              color: Colors.white,
-                              onPressed: () => _showGuideSheet(ref),
-                              icon: const Icon(Icons.help_outline_rounded),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Container(
                             width: 40,
                             height: 40,
                             decoration: BoxDecoration(
@@ -430,14 +413,36 @@ class HomeScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildMenuGrid(BuildContext context, bool hasPretestScore) {
+  Widget _buildMenuGrid(BuildContext context, WidgetRef ref, bool hasPretestScore) {
     final cards = <Widget>[
+      _menuCard(
+        'Panduan',
+        'Cara memakai aplikasi',
+        AppColors.info,
+        StudentPose.guide,
+        onTap: () => _showGuideSheet(ref),
+      ),
       _menuCard(
         'Kompetensi Pembelajaran',
         'Kompetensi & tujuan belajar',
         AppColors.progressTeal,
         StudentPose.goal,
         onTap: () => context.push('/capaian'),
+      ),
+      _menuCard(
+        'Pre Test',
+        hasPretestScore ? 'Sudah kamu kerjakan' : 'Tes awal sebelum belajar',
+        AppColors.accentOrange,
+        StudentPose.pretest,
+        hijab: true,
+        // Pre-Test hanya boleh sekali supaya skor awal N-Gain tetap sahih.
+        enabled: !hasPretestScore,
+        lockedLabel: 'Selesai',
+        lockedIcon: Icons.check_circle_rounded,
+        lockedMessage:
+            'Pre-Test hanya bisa dikerjakan sekali. Untuk mengulang, reset data '
+            'belajar di Profil > Pengaturan.',
+        onTap: () => context.push('/pretest'),
       ),
       _menuCard(
         'Materi',
@@ -458,21 +463,12 @@ class HomeScreen extends ConsumerWidget {
         onTap: () => context.push('/simulation'),
       ),
       _menuCard(
-        'Test',
-        'Pre-Test & Post-Test',
-        AppColors.accentOrange,
-        StudentPose.quiz,
-        hijab: true,
-        badge: '2 mode',
-        onTap: () => context.push('/test'),
-      ),
-      _menuCard(
-        'Progress',
-        'Nilai & pencapaianmu',
-        AppColors.purple,
-        StudentPose.achievement,
+        'Post Test',
+        'Tes akhir setelah belajar',
+        AppColors.postDark,
+        StudentPose.posttest,
         enabled: hasPretestScore,
-        onTap: () => context.push('/progress'),
+        onTap: () => context.push('/posttest'),
       ),
       _menuCard(
         'Refleksi',
@@ -482,6 +478,14 @@ class HomeScreen extends ConsumerWidget {
         hijab: true,
         enabled: hasPretestScore,
         onTap: () => context.push('/reflection'),
+      ),
+      _menuCard(
+        'Progress',
+        'Nilai & pencapaianmu',
+        AppColors.purple,
+        StudentPose.achievement,
+        enabled: hasPretestScore,
+        onTap: () => context.push('/progress'),
       ),
     ];
 
@@ -511,13 +515,16 @@ class HomeScreen extends ConsumerWidget {
     String? badge,
     bool enabled = true,
     bool hijab = false,
+    String? lockedMessage,
+    String lockedLabel = 'Terkunci',
+    IconData lockedIcon = Icons.lock_rounded,
     VoidCallback? onTap,
   }) {
     return Builder(
       builder: (context) => Pressable(
         // A locked card still answers the tap — it says what unlocks it,
         // instead of feeling like a broken button.
-        onTap: enabled ? onTap : () => _explainLocked(context, title),
+        onTap: enabled ? onTap : () => _explainLocked(context, title, lockedMessage),
         child: LayoutBuilder(
           builder: (context, constraints) {
             final size = constraints.biggest;
@@ -598,10 +605,10 @@ class HomeScreen extends ConsumerWidget {
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Icon(Icons.lock_rounded, color: Colors.white, size: 12),
+                              Icon(lockedIcon, color: Colors.white, size: 12),
                               const SizedBox(width: 4),
                               Text(
-                                'Terkunci',
+                                lockedLabel,
                                 style: AppTextStyles.labelTiny.copyWith(color: Colors.white),
                               ),
                             ],
@@ -635,7 +642,7 @@ class HomeScreen extends ConsumerWidget {
   }
 
   /// Tell the student what a locked menu is waiting for.
-  void _explainLocked(BuildContext context, String title) {
+  void _explainLocked(BuildContext context, String title, [String? message]) {
     ScaffoldMessenger.of(context)
       ..clearSnackBars()
       ..showSnackBar(
@@ -646,14 +653,25 @@ class HomeScreen extends ConsumerWidget {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppDimensions.radiusLarge),
           ),
-          duration: const Duration(seconds: 3),
+          duration: const Duration(seconds: 4),
+          action: message == null
+              ? null
+              : SnackBarAction(
+                  label: 'Profil',
+                  textColor: Colors.white,
+                  onPressed: () => context.push('/profile'),
+                ),
           content: Row(
             children: [
-              const Icon(Icons.lock_rounded, color: Colors.white, size: 16),
+              Icon(
+                message == null ? Icons.lock_rounded : Icons.info_rounded,
+                color: Colors.white,
+                size: 16,
+              ),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  'Menu $title terbuka setelah kamu mengerjakan Pre-Test.',
+                  message ?? 'Menu $title terbuka setelah kamu mengerjakan Pre-Test.',
                   style: const TextStyle(color: Colors.white, fontSize: 13),
                 ),
               ),

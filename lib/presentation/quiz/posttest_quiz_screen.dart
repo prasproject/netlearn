@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../core/widgets/animated_progress_bar.dart';
+import '../../core/widgets/answer_feedback.dart';
 import '../../core/widgets/gradient_button.dart';
 import '../../data/models/quiz_model.dart';
 import '../../domain/providers/audio_provider.dart';
@@ -141,33 +142,36 @@ class _PosttestQuizScreenState extends ConsumerState<PosttestQuizScreen> {
                     const SizedBox(height: 16),
                     // Options
                     ...List.generate(q.options.length, (i) {
-                      final isSelected = quiz.answers[quiz.currentQuestionIndex] == i;
                       final alreadyAnswered = quiz.answers.containsKey(quiz.currentQuestionIndex);
                       final letters = ['A', 'B', 'C', 'D'];
+                      // Setelah dijawab, kunci jawaban langsung diperlihatkan
+                      // supaya Post-Test sekalian jadi bahan belajar.
+                      final style = resolveAnswerOptionStyle(
+                        index: i,
+                        correctIndex: q.correctIndex,
+                        selectedIndex: quiz.answers[quiz.currentQuestionIndex],
+                        answered: alreadyAnswered,
+                        baseColor: AppColors.secondaryGreen,
+                        baseSurface: AppColors.secondaryGreenSurface,
+                      );
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 8),
                         child: GestureDetector(
                           onTap: () {
-                            if (!alreadyAnswered) {
-                              final isCorrect = i == q.correctIndex;
-                              ref.read(audioProvider.notifier).playSfx(
-                                isCorrect ? SoundEffect.correct : SoundEffect.incorrect,
-                              );
-                            }
+                            if (alreadyAnswered) return;
+                            final isCorrect = i == q.correctIndex;
+                            ref.read(audioProvider.notifier).playSfx(
+                              isCorrect ? SoundEffect.correct : SoundEffect.incorrect,
+                            );
                             ref.read(quizProvider.notifier).selectAnswer(i);
                           },
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 200),
                             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                             decoration: BoxDecoration(
-                              color: isSelected ? AppColors.secondaryGreen : AppColors.secondaryGreenSurface,
+                              color: style.background,
                               borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: isSelected
-                                    ? AppColors.secondaryGreen
-                                    : AppColors.secondaryGreen.withValues(alpha: 0.45),
-                                width: 1.5,
-                              ),
+                              border: Border.all(color: style.border, width: 1.5),
                             ),
                             child: Row(
                               children: [
@@ -176,15 +180,13 @@ class _PosttestQuizScreenState extends ConsumerState<PosttestQuizScreen> {
                                   height: 24,
                                   decoration: BoxDecoration(
                                     shape: BoxShape.circle,
-                                    color: isSelected
-                                        ? Colors.white.withValues(alpha: 0.25)
-                                        : Colors.white.withValues(alpha: 0.5),
+                                    color: Colors.white.withValues(alpha: 0.35),
                                   ),
                                   child: Center(
                                     child: Text(
                                       letters[i],
                                       style: AppTextStyles.pillText.copyWith(
-                                        color: isSelected ? Colors.white : AppColors.secondaryGreen,
+                                        color: style.foreground,
                                         fontSize: 12,
                                       ),
                                     ),
@@ -195,16 +197,27 @@ class _PosttestQuizScreenState extends ConsumerState<PosttestQuizScreen> {
                                   child: Text(
                                     q.options[i],
                                     style: AppTextStyles.quizOption.copyWith(
-                                      color: isSelected ? Colors.white : AppColors.secondaryGreen,
+                                      color: style.foreground,
                                     ),
                                   ),
                                 ),
+                                if (style.icon != null) ...[
+                                  const SizedBox(width: 8),
+                                  Icon(style.icon, color: style.foreground, size: 18),
+                                ],
                               ],
                             ),
                           ),
                         ).animate().slideX(begin: 0.03, delay: (i * 60).ms, duration: 300.ms).fadeIn(),
                       );
                     }),
+                    if (quiz.answers.containsKey(quiz.currentQuestionIndex))
+                      AnswerFeedbackCard(
+                        isCorrect: quiz.answers[quiz.currentQuestionIndex] == q.correctIndex,
+                        correctIndex: q.correctIndex,
+                        correctAnswer: q.options[q.correctIndex],
+                        explanation: q.explanation,
+                      ),
                   ],
                 ),
               ),

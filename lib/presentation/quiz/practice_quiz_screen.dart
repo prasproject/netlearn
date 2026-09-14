@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/constants/app_text_styles.dart';
+import '../../core/widgets/answer_feedback.dart';
 import '../../core/widgets/gradient_button.dart';
 import '../../data/models/quiz_model.dart';
 import '../../domain/providers/quiz_provider.dart';
@@ -228,17 +229,25 @@ class _PracticeQuizScreenState extends ConsumerState<PracticeQuizScreen> {
                     ).animate().fadeIn(delay: 100.ms),
                     const SizedBox(height: 16),
                     ...List.generate(q.options.length, (i) {
-                      final isSelected = quiz.answers[quiz.currentQuestionIndex] == i;
+                      // Setelah dijawab, kunci jawaban selalu ikut ditandai —
+                      // benar atau salah pilihan siswa.
+                      final style = resolveAnswerOptionStyle(
+                        index: i,
+                        correctIndex: q.correctIndex,
+                        selectedIndex: quiz.answers[quiz.currentQuestionIndex],
+                        answered: hasAnswer,
+                        baseColor: AppColors.secondaryGreen,
+                        baseSurface: AppColors.secondaryGreenSurface,
+                      );
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 8),
                         child: GestureDetector(
                           onTap: () {
-                            if (!hasAnswer) {
-                              final isCorrect = i == q.correctIndex;
-                              ref.read(audioProvider.notifier).playSfx(
-                                    isCorrect ? SoundEffect.correct : SoundEffect.incorrect,
-                                  );
-                            }
+                            if (hasAnswer) return;
+                            final isCorrect = i == q.correctIndex;
+                            ref.read(audioProvider.notifier).playSfx(
+                                  isCorrect ? SoundEffect.correct : SoundEffect.incorrect,
+                                );
                             ref.read(quizProvider.notifier).selectAnswer(i);
                           },
                           child: AnimatedContainer(
@@ -246,23 +255,37 @@ class _PracticeQuizScreenState extends ConsumerState<PracticeQuizScreen> {
                             width: double.infinity,
                             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                             decoration: BoxDecoration(
-                              color: isSelected ? AppColors.secondaryGreen : AppColors.secondaryGreenSurface,
+                              color: style.background,
                               borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: isSelected ? AppColors.secondaryGreen : AppColors.secondaryGreenAccent,
-                                width: 1.5,
-                              ),
+                              border: Border.all(color: style.border, width: 1.5),
                             ),
-                            child: Text(
-                              q.options[i],
-                              style: AppTextStyles.quizOption.copyWith(
-                                color: isSelected ? Colors.white : AppColors.secondaryGreen,
-                              ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    q.options[i],
+                                    style: AppTextStyles.quizOption.copyWith(
+                                      color: style.foreground,
+                                    ),
+                                  ),
+                                ),
+                                if (style.icon != null) ...[
+                                  const SizedBox(width: 8),
+                                  Icon(style.icon, color: style.foreground, size: 18),
+                                ],
+                              ],
                             ),
                           ),
                         ).animate().slideX(begin: 0.03, delay: (i * 60).ms, duration: 300.ms).fadeIn(),
                       );
                     }),
+                    if (hasAnswer)
+                      AnswerFeedbackCard(
+                        isCorrect: quiz.answers[quiz.currentQuestionIndex] == q.correctIndex,
+                        correctIndex: q.correctIndex,
+                        correctAnswer: q.options[q.correctIndex],
+                        explanation: q.explanation,
+                      ),
                   ],
                 ),
               ),

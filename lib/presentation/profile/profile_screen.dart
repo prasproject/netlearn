@@ -254,7 +254,8 @@ class ProfileScreen extends ConsumerWidget {
         title: const Text('Reset data belajar?'),
         content: const Text(
           'Semua progress materi, skor quiz, badge, XP, dan streak akan dihapus. '
-          'Akun dan pengaturan audio tetap tersimpan. Tindakan ini tidak dapat dibatalkan.',
+          'Akun dan pengaturan audio tetap tersimpan. Pre-Test akan terbuka lagi '
+          'setelah reset. Tindakan ini tidak dapat dibatalkan.',
         ),
         actions: [
           TextButton(

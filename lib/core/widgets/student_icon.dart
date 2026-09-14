@@ -23,6 +23,15 @@ enum StudentPose {
 
   /// Refleksi — berpikir, muncul bohlam ide.
   reflecting,
+
+  /// Panduan — menunjuk papan petunjuk arah.
+  guide,
+
+  /// Pre-Test — mengerjakan soal, sama seperti [quiz].
+  pretest,
+
+  /// Post-Test — mengerjakan soal, sama seperti [quiz].
+  posttest,
 }
 
 /// Illustrated Indonesian senior-high (SMA) student mascot, painted in code in
@@ -294,6 +303,8 @@ class _StudentPainter extends CustomPainter {
       case StudentPose.reading:
       case StudentPose.building:
       case StudentPose.quiz:
+      case StudentPose.pretest:
+      case StudentPose.posttest:
         arm(-1, c.translate(-u(15), u(27)));
         arm(1, c.translate(u(15), u(27)));
       case StudentPose.achievement:
@@ -305,6 +316,9 @@ class _StudentPainter extends CustomPainter {
       case StudentPose.reflecting:
         arm(-1, c.translate(-u(19), u(24)));
         arm(1, c.translate(u(13), u(0)), bend: u(8));
+      case StudentPose.guide:
+        arm(-1, c.translate(-u(19), u(22)));
+        arm(1, c.translate(u(20), -u(4)), bend: u(9));
     }
   }
 
@@ -466,6 +480,8 @@ class _StudentPainter extends CustomPainter {
         _paintTrophy(canvas, c);
       case StudentPose.reflecting:
         _paintIdea(canvas, c);
+      case StudentPose.guide:
+        _paintSignpost(canvas, c);
       default:
         break;
     }
@@ -479,9 +495,50 @@ class _StudentPainter extends CustomPainter {
       case StudentPose.building:
         _paintLaptop(canvas, c);
       case StudentPose.quiz:
+      case StudentPose.pretest:
+      case StudentPose.posttest:
         _paintSheetAndPencil(canvas, c);
       default:
         break;
+    }
+  }
+
+  /// Papan petunjuk arah untuk pose [StudentPose.guide]: tiang dengan dua
+  /// papan penunjuk, jadi menu Panduan terbaca sebagai "arah belajar".
+  void _paintSignpost(Canvas canvas, Offset c) {
+    final base = c.translate(u(26), u(6));
+    // Tiang
+    final pole = RRect.fromRectAndRadius(
+      Rect.fromLTWH(base.dx - u(2.5), base.dy - u(30), u(5), u(46)),
+      Radius.circular(u(2.5)),
+    );
+    canvas.drawRRect(pole, _shaded(pole.outerRect, const Color(0xFFC9A227), const Color(0xFF9A7A15)));
+    canvas.drawRRect(pole, _outline);
+
+    // Dua papan penunjuk, menghadap berlawanan arah
+    for (var i = 0; i < 2; i++) {
+      final dir = i == 0 ? 1.0 : -1.0;
+      final top = base.dy - u(26) + u(14.0 * i);
+      final board = Path()
+        ..moveTo(base.dx, top)
+        ..lineTo(base.dx + dir * u(18), top)
+        ..lineTo(base.dx + dir * u(24), top + u(5))
+        ..lineTo(base.dx + dir * u(18), top + u(10))
+        ..lineTo(base.dx, top + u(10))
+        ..close();
+      canvas.drawPath(
+        board,
+        _shaded(board.getBounds(), Colors.white, const Color(0xFFE6ECF8)),
+      );
+      canvas.drawPath(board, _outline);
+      canvas.drawLine(
+        Offset(base.dx + dir * u(5), top + u(5)),
+        Offset(base.dx + dir * u(15), top + u(5)),
+        Paint()
+          ..strokeWidth = u(1.6)
+          ..strokeCap = StrokeCap.round
+          ..color = accent,
+      );
     }
   }
 
